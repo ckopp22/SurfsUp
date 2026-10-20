@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Surf's Up">
+  <meta name="theme-color" content="#1aa7c9">
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <title>Surf's Up</title>
+  <link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+
+  <div id="topbar">
+    <button id="sound-btn" class="icon-btn" type="button" aria-label="Toggle sound">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"/>
+        <g class="sound-on"><path d="M16 9a4 4 0 0 1 0 6"/><path d="M18.5 6.5a8 8 0 0 1 0 11"/></g>
+        <g class="sound-off"><path d="M16 9l5 6"/><path d="M21 9l-5 6"/></g>
+      </svg>
+    </button>
+    <div id="mode-toggle" class="segmented" role="group" aria-label="Game mode">
+      <button type="button" class="seg" data-mode="compete">Compete</button>
+      <button type="button" class="seg" data-mode="fun">Fun</button>
+    </div>
+  </div>
+
+  <main id="screens">
+    <section id="screen-menu" class="screen" hidden>
+      <h1 class="title">Surf's Up</h1>
+      <div class="stack">
+        <button class="btn btn-primary" type="button" data-go="PLAYING">Play</button>
+        <button class="btn" type="button" data-go="HIGH_SCORES">High Scores</button>
+        <button class="btn" type="button" data-go="SETTINGS">Settings</button>
+      </div>
+    </section>
+
+    <section id="screen-highscores" class="screen" hidden>
+      <h2 class="heading">High Scores</h2>
+      <p class="subheading">Compete · Top 10</p>
+      <div id="score-list" class="panel scrollable"></div>
+      <div class="stack row-stack">
+        <button class="btn" type="button" data-go="MENU">Back</button>
+        <button class="btn btn-danger" type="button" data-action="clear-scores">Clear Scores</button>
+      </div>
+    </section>
+
+    <section id="screen-settings" class="screen" hidden>
+      <h2 class="heading">Settings</h2>
+      <div class="panel">
+        <button class="switch-row" type="button" role="switch" data-setting="sfx"><span>Sound effects</span><span class="pill"></span></button>
+        <button class="switch-row" type="button" role="switch" data-setting="music"><span>Music</span><span class="pill"></span></button>
+        <button class="switch-row" type="button" role="switch" data-setting="joystick"><span>Floating joystick</span><span class="pill"></span></button>
+      </div>
+      <div class="stack">
+        <button class="btn btn-danger" type="button" data-action="clear-scores">Reset High Scores</button>
+        <button class="btn" type="button" data-go="MENU">Back</button>
+      </div>
+    </section>
+
+    <section id="screen-game" class="screen" hidden>
+      <button id="pause-btn" class="icon-btn" type="button" aria-label="Pause">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+      </button>
+      <p class="placeholder-note">Game coming soon</p>
+      <div id="pause-overlay" class="overlay" hidden>
+        <div class="panel">
+          <h2 class="heading">Paused</h2>
+          <div class="stack">
+            <button class="btn btn-primary" type="button" data-action="resume">Resume</button>
+            <button class="btn" type="button" data-go="MENU">Quit to Menu</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="confirm" class="overlay" hidden>
+    <div class="panel" role="alertdialog" aria-labelledby="confirm-msg">
+      <p id="confirm-msg"></p>
+      <div class="stack row-stack">
+        <button class="btn" type="button" id="confirm-cancel">Cancel</button>
+        <button class="btn btn-danger" type="button" id="confirm-ok">Clear</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>
