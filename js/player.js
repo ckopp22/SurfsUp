@@ -3,8 +3,8 @@ export const PLAYER_CONFIG = {
   boardLength: 48,   // px
   boardWidth: 18,    // px
   hitRadius: 14,     // px, collision radius used by hazards
-  margin: 18,        // px kept between the rider and the edges of the face
-  topUiHeight: 60,   // px below the safe-area top reserved for the top bar
+  margin: 14,        // px kept between the rider and the edges of the face
+  topUiHeight: 52,   // px below the safe-area top reserved for the top bar
   wake: {
     maxParticles: 60,
     life: 0.6,       // s
@@ -26,7 +26,6 @@ export function createPlayer() {
     lean: 0,         // -1..1 board bank
     wipeT: 0,        // 0..1 progress of the wipeout animation
     carve: 0,        // 0..1 how hard the rider is carving right now
-    invuln: 0,       // s of invulnerability left (Fun mode, after a bump)
   };
 }
 

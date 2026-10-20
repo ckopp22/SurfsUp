@@ -6,7 +6,8 @@ export const OCEAN = {
   colors: { deep: '#0b6e99', mid: '#1388b1', shallow: '#1aa7c9', sand: '#f2d49b', foam: '#ffffff' },
   bandSplits: [0.4, 0.7],   // fraction of water height where deep -> mid -> shallow begin
   sandFrac: 0.1,            // sand strip height as a fraction of screen height
-  sandMin: 80,              // px, so it clears the home indicator
+  sandMin: 56,              // px of sand at least
+  sandInset: 40,            // px of sand kept above the bottom safe-area inset (home indicator)
   lineCount: 9,
   lineSpeed: 12,            // px/s drift toward the beach
   lineAmp: 5,
@@ -61,7 +62,7 @@ export function resizeCanvas(canvas) {
 }
 
 export function sandTop() {
-  return height - Math.max(OCEAN.sandMin, height * OCEAN.sandFrac);
+  return height - Math.max(OCEAN.sandMin, height * OCEAN.sandFrac, insets.bottom + OCEAN.sandInset);
 }
 
 export function drawWater(ctx, t) {
@@ -237,7 +238,6 @@ export function drawPlayer(ctx, p) {
   const W = PLAYER_CONFIG.boardWidth;
   const c = p.crouch;
   const wiping = p.state === 'WIPEOUT';
-  if (p.invuln > 0 && Math.floor(p.invuln * 12) % 2 === 0) ctx.globalAlpha = 0.35; // blinking after a bump
   ctx.save();
   ctx.translate(p.x, p.y);
   if (wiping) {
@@ -346,7 +346,7 @@ export function drawHazards(ctx, list, t) {
       const L = h.size / 2;
       ctx.save();
       ctx.translate(h.x, h.y);
-      ctx.rotate(Math.atan2(h.vy, h.vx));
+      ctx.rotate(h.heading !== undefined ? h.heading : Math.atan2(h.vy, h.vx));
       ctx.strokeStyle = HZ.foam;
       ctx.lineWidth = 3;
       ctx.lineCap = 'round';
@@ -373,6 +373,45 @@ export function drawHazards(ctx, list, t) {
     } else {
       drawSurferFigure(ctx, h.x, h.y, Math.atan2(h.vy, h.vx), h.color);
     }
+    if (h.hitT > 0) { // flash white when a coconut lands
+      ctx.fillStyle = '#ffffff';
+      ctx.globalAlpha = Math.min(0.75, h.hitT * 6);
+      ctx.beginPath();
+      ctx.arc(h.x, h.y, h.kind === 'shark' ? 24 : h.r + 6, 0, 6.2832);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    if (h.maxHp > 1 && h.hp < h.maxHp) { // remaining health pips once damaged
+      const py = h.y - (h.kind === 'rock' ? h.size + 16 : 30);
+      ctx.fillStyle = '#ffffff';
+      for (let k = 0; k < h.maxHp; k++) {
+        ctx.globalAlpha = k < h.hp ? 1 : 0.25;
+        ctx.beginPath();
+        ctx.arc(h.x + (k - (h.maxHp - 1) / 2) * 9, py, 3, 0, 6.2832);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
+// Coconuts in flight (world coordinates).
+export function drawCoconuts(ctx, shots) {
+  for (let i = 0; i < shots.length; i++) {
+    const s = shots[i];
+    ctx.fillStyle = '#6b4423';
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, 7, 0, 6.2832);
+    ctx.fill();
+    ctx.fillStyle = '#9a6b3f';
+    ctx.beginPath();
+    ctx.arc(s.x - 2, s.y - 2, 3, 0, 6.2832);
+    ctx.fill();
+    ctx.fillStyle = '#2c1a0c';
+    ctx.beginPath();
+    ctx.arc(s.x + 2, s.y - 1, 1.2, 0, 6.2832);
+    ctx.arc(s.x + 2, s.y + 2, 1.2, 0, 6.2832);
+    ctx.fill();
   }
 }
 
@@ -382,14 +421,25 @@ export function drawWarnings(ctx, list, warnDist, top, bottom, t) {
   ctx.textAlign = 'center';
   for (let i = 0; i < list.length; i++) {
     const h = list[i];
-    if (h.kind !== 'shark') continue;
+    if (h.kind !== 'shark' && !h.warnWall) continue;
     const off = h.x - (camera.x + width);
     if (off < 0 || off > warnDist) continue;
     const u = 1 - off / warnDist; // 0 far .. 1 about to appear
+    const pulse = 0.65 + 0.3 * Math.sin(t * (8 + 14 * u));
+    const x = width - 6;
+    if (h.warnWall) {
+      // a wall: a bar down the whole edge, you will have to shoot through
+      ctx.globalAlpha = pulse * 0.55;
+      ctx.fillStyle = '#ff5a3c';
+      ctx.fillRect(width - 10, top - 20, 10, bottom - top + 40);
+      ctx.globalAlpha = pulse;
+      ctx.font = '800 26px -apple-system, system-ui, sans-serif';
+      ctx.fillText('WALL!', width - 44, (top + bottom) / 2);
+      continue;
+    }
     const s = 14 + 10 * u;
     const y = h.y < top ? top : h.y > bottom ? bottom : h.y;
-    const x = width - 6;
-    ctx.globalAlpha = 0.65 + 0.3 * Math.sin(t * (8 + 14 * u));
+    ctx.globalAlpha = pulse;
     ctx.fillStyle = u > 0.6 ? '#ff5a3c' : '#ffb020';
     ctx.beginPath();
     ctx.moveTo(x, y - s);
@@ -397,15 +447,17 @@ export function drawWarnings(ctx, list, warnDist, top, bottom, t) {
     ctx.lineTo(x - s * 1.7, y);
     ctx.closePath();
     ctx.fill();
-    // arrow: which way the shark is swimming across the face
-    const dir = h.vy > 0 ? 1 : -1;
-    const ay = y + dir * (s + 12);
-    ctx.beginPath();
-    ctx.moveTo(x - s * 0.8, ay + dir * 8);
-    ctx.lineTo(x - s * 0.8 - 8, ay - dir * 4);
-    ctx.lineTo(x - s * 0.8 + 8, ay - dir * 4);
-    ctx.closePath();
-    ctx.fill();
+    if (Math.abs(h.vy) > 1) {
+      // arrow: which way the shark is swimming across the face
+      const dir = h.vy > 0 ? 1 : -1;
+      const ay = y + dir * (s + 12);
+      ctx.beginPath();
+      ctx.moveTo(x - s * 0.8, ay + dir * 8);
+      ctx.lineTo(x - s * 0.8 - 8, ay - dir * 4);
+      ctx.lineTo(x - s * 0.8 + 8, ay - dir * 4);
+      ctx.closePath();
+      ctx.fill();
+    }
     ctx.fillStyle = '#3a1400';
     ctx.font = `800 ${Math.round(s)}px -apple-system, system-ui, sans-serif`;
     ctx.fillText('!', x - s * 0.6, y + s * 0.36);

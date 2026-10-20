@@ -40,9 +40,10 @@ export function qualifiesForHighScore(score) {
   return score > 0 && (list.length < MAX_SCORES || score > list[list.length - 1].score);
 }
 
-export function addHighScore(score) {
+// mode: 'compete' or 'fun' (shown as C / F in the list). Scores saved before modes were tracked count as Compete.
+export function addHighScore(score, mode) {
   const list = getHighScores();
-  list.push({ score, date: new Date().toISOString().slice(0, 10) });
+  list.push({ score, date: new Date().toISOString().slice(0, 10), mode: mode === 'fun' ? 'fun' : 'compete' });
   list.sort((a, b) => b.score - a.score);
   list.length = Math.min(list.length, MAX_SCORES);
   write(KEYS.scores, list);

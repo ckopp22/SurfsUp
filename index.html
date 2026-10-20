@@ -31,6 +31,7 @@
   </div>
 
   <div id="hud" class="hud" hidden>0 m</div>
+  <p id="tip" class="tip" hidden></p>
   <pre id="debug" hidden></pre>
 
   <main id="screens">
@@ -49,7 +50,7 @@
 
     <section id="screen-highscores" class="screen" hidden>
       <h2 class="heading">High Scores</h2>
-      <p class="subheading">Compete · Top 10</p>
+      <p class="subheading">C = Compete · F = Fun · Top 10</p>
       <div id="score-list" class="panel scrollable"></div>
       <div class="stack row-stack">
         <button class="btn" type="button" data-go="MENU">Back</button>
@@ -106,6 +107,11 @@
         <button class="btn btn-danger" type="button" id="confirm-ok">Clear</button>
       </div>
     </div>
+  </div>
+
+  <div id="rotate" aria-live="polite">
+    <div class="rotate-icon" aria-hidden="true">&#8635;</div>
+    <p>Rotate your phone to landscape</p>
   </div>
 
   <script type="module" src="./js/main.js"></script>

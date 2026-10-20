@@ -3,11 +3,14 @@ export const RIDE_CONFIG = {
   // forward speed (px/s along the wave)
   startSpeed: 170,     // at the start of a run
   speedRamp: 3,        // px/s gained per second of riding
-  maxSpeed: 420,       // cap
+  maxSpeed: 420,       // cap (Compete)
+  funMaxSpeed: 300,    // cap in Fun, so there is time to shoot a path through walls
   metersPerPx: 0.025,  // distance shown to the player (40 px = 1 m)
 
   // carving
-  maxAngle: 0.9,       // rad (~50°): steepest board angle off the wave direction
+  maxAngle: 0.9,       // rad (~50°): steepest board angle off the wave direction on a tall face
+  refFace: 560,        // px: the play-area height the carving and hazards are tuned for; shorter faces (landscape) scale down
+  minFaceScale: 0.6,   // lowest scale applied for short faces
   turnRate: 1.8,       // rad/s the board turns at full steering
   carveInertia: 0.14,  // s the turn takes to build/release (higher = heavier board, wider arcs)
   straightenRate: 1.2, // rad/s the board returns to straight with no steering
@@ -19,10 +22,6 @@ export const RIDE_CONFIG = {
   wipeoutDuration: 1.0, // s tumble after a Compete collision
   wipeDrag: 2.5,        // 1/s how fast the rider and the scroll slow down during the wipeout
   overDelay: 0.5,       // s after the tumble before the Game Over screen
-  bumpSpeed: 0.35,      // Fun: forward speed multiplier right after a bump
-  bumpRecover: 1.2,     // Fun: 1/s speed recovery after a bump
-  invulnTime: 1.2,      // Fun: s of invulnerability (blinking) after a bump
-  bumpNudge: 0.35,      // Fun: rad the board is shoved away from what it hit
 };
 
 // Score = distance in meters + a flat bonus for every near miss (passing close to a hazard without touching it).
@@ -33,26 +32,29 @@ export const SCORE_CONFIG = {
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
+// 1 on a tall (portrait) face, down to minFaceScale on a short (landscape) one
+export const faceScale = (bounds) => clamp((bounds.maxY - bounds.minY) / RIDE_CONFIG.refFace, RIDE_CONFIG.minFaceScale, 1);
+
 export function createRun() {
   return {
     time: 0,
     speed: RIDE_CONFIG.startSpeed, // forward speed
     startX: 0,
-    speedMul: 1, // < 1 after a Fun-mode bump, recovers to 1
+    maxSpeed: RIDE_CONFIG.maxSpeed, // speed cap for this run (lower in Fun)
+    angleCap: RIDE_CONFIG.maxAngle, // steepest board angle for this face height
     phi: 0,   // board angle off the wave direction; positive = down the screen (toward shore)
     omega: 0, // turn rate
   };
 }
 
-export const runSpeed = (time) => Math.min(RIDE_CONFIG.maxSpeed, RIDE_CONFIG.startSpeed + RIDE_CONFIG.speedRamp * time);
+export const runSpeed = (time, cap) => Math.min(cap, RIDE_CONFIG.startSpeed + RIDE_CONFIG.speedRamp * time);
 export const runDistance = (run, p) => Math.max(0, (p.x - run.startX) * RIDE_CONFIG.metersPerPx);
 
 // input.y: -1 (up the face, toward the ocean) .. +1 (down, toward shore)
 export function updateRide(run, p, input, dt, bounds) {
   const C = RIDE_CONFIG;
   run.time += dt;
-  run.speedMul += (1 - run.speedMul) * Math.min(1, C.bumpRecover * dt);
-  run.speed = runSpeed(run.time) * run.speedMul;
+  run.speed = runSpeed(run.time, run.maxSpeed);
 
   // snowboard carve: steering sets a target turn rate which the board follows with inertia
   const steer = clamp(input.y, -1, 1);
@@ -61,8 +63,9 @@ export function updateRide(run, p, input, dt, bounds) {
     : -clamp(run.phi * 3, -C.straightenRate, C.straightenRate);
   run.omega += (target - run.omega) * (1 - Math.exp(-dt / C.carveInertia));
   run.phi += run.omega * dt;
-  if (run.phi > C.maxAngle) { run.phi = C.maxAngle; run.omega = Math.min(run.omega, 0); }
-  if (run.phi < -C.maxAngle) { run.phi = -C.maxAngle; run.omega = Math.max(run.omega, 0); }
+  run.angleCap = C.maxAngle * faceScale(bounds);
+  if (run.phi > run.angleCap) { run.phi = run.angleCap; run.omega = Math.min(run.omega, 0); }
+  if (run.phi < -run.angleCap) { run.phi = -run.angleCap; run.omega = Math.max(run.omega, 0); }
 
   const vy = clamp(run.speed * Math.tan(run.phi), -C.maxAcross, C.maxAcross);
   p.x += run.speed * dt;
@@ -77,6 +80,6 @@ export function updateRide(run, p, input, dt, bounds) {
   p.vy = atEdge ? 0 : vy;
   p.speed = Math.hypot(p.vx, p.vy);
   p.heading = Math.atan2(p.vy, p.vx);
-  p.lean = clamp(run.phi / C.maxAngle, -1, 1);
+  p.lean = clamp(run.phi / run.angleCap, -1, 1);
   p.carve += (clamp(Math.abs(run.omega) / C.hardCarve, 0, 1) - p.carve) * Math.min(1, dt * 10);
 }

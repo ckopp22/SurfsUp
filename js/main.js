@@ -1,9 +1,9 @@
 import { getSettings, saveSettings, getHighScores, clearHighScores, addHighScore, qualifiesForHighScore } from './storage.js';
-import { resizeCanvas, drawOcean, drawWater, drawWall, drawShore, beginWorld, endWorld, drawWake, drawPlayer, drawJoystick, drawEffects, drawHazards, drawWarnings, drawPopups } from './render.js';
+import { resizeCanvas, drawOcean, drawWater, drawWall, drawShore, beginWorld, endWorld, drawWake, drawPlayer, drawJoystick, drawEffects, drawHazards, drawCoconuts, drawWarnings, drawPopups } from './render.js';
 import { blockZoomAndScroll, initInput, setInputEnabled, clearInput, getInputVector, getJoystick } from './input.js';
 import { camera } from './world.js';
 import { on, EVENTS } from './events.js';
-import { game, resetGame, refreshBounds, updateGame, scoreValue, distanceMeters, spawnHazard } from './game.js';
+import { game, resetGame, refreshBounds, updateGame, scoreValue, distanceMeters, spawnHazard, shootCoconut } from './game.js';
 import { HAZARD_CONFIG } from './hazards.js';
 import { isSoundOn, toggleSound, unlockAudio, refreshAudio, setAudioHidden, setAudioPaused, updateAudio, sfxTap, sfxGameOver } from './audio.js';
 import { RIDE_CONFIG } from './ride.js';
@@ -29,6 +29,7 @@ let state = 'BOOT';
 let oceanTime = 0;
 let debugOn = false;
 let hudText = '';
+let tipShown = false;
 let fps = 60;
 let debugStamp = 0;
 
@@ -70,7 +71,7 @@ function renderScores() {
     return;
   }
   box.innerHTML = list.map((s, i) =>
-    `<div class="score-row"><span class="score-rank">${i + 1}</span><span class="score-val">${Number(s.score) || 0}</span><span class="score-date">${String(s.date || '').replace(/[<>&]/g, '')}</span></div>`
+    `<div class="score-row"><span class="score-rank">${i + 1}</span><span class="score-mode">${s.mode === 'fun' ? 'F' : 'C'}</span><span class="score-val">${Number(s.score) || 0}</span><span class="score-date">${String(s.date || '').replace(/[<>&]/g, '')}</span></div>`
   ).join('');
 }
 
@@ -126,7 +127,13 @@ document.addEventListener('click', (e) => {
 });
 
 // ---- loop ----
-function resize() { resizeCanvas(canvas); refreshBounds(); }
+const portraitPhone = window.matchMedia('(orientation: portrait) and (pointer: coarse)');
+
+function resize() {
+  resizeCanvas(canvas);
+  refreshBounds();
+  if (portraitPhone.matches && state === 'PLAYING') setState('PAUSED'); // the game is landscape: pause until the phone is turned
+}
 
 function toggleDebug() {
   debugOn = !debugOn;
@@ -159,7 +166,7 @@ function frame(now) {
   const running = state !== 'PAUSED' && !document.hidden;
   if (running) oceanTime += dt;
   if (running && state === 'PLAYING') updateGame(dt);
-  updateAudio(state === 'PLAYING' && game.player.state === 'RIDING', getInputVector().y, game.run.speed / RIDE_CONFIG.maxSpeed);
+  updateAudio(state === 'PLAYING' && game.player.state === 'RIDING', getInputVector().y, game.run.speed / game.run.maxSpeed);
 
   if (state === 'PLAYING' || state === 'PAUSED' || state === 'GAME_OVER') {
     drawWater(ctx, oceanTime);
@@ -167,6 +174,7 @@ function frame(now) {
     drawShore(ctx, oceanTime, 0.3 + 0.1 * Math.sin(oceanTime * 0.9));
     beginWorld(ctx);
     drawHazards(ctx, game.hz.list, oceanTime);
+    drawCoconuts(ctx, game.hz.shots);
     drawWake(ctx, game.wake);
     drawPlayer(ctx, game.player);
     drawEffects(ctx, game.effects);
@@ -180,6 +188,13 @@ function frame(now) {
   } else {
     drawOcean(ctx, oceanTime);
   }
+  const wantTip = state === 'PLAYING' && game.mode === 'fun' && game.run.time < 7;
+  if (wantTip !== tipShown) {
+    tipShown = wantTip;
+    const tip = $('#tip');
+    tip.textContent = ('ontouchstart' in window || navigator.maxTouchPoints > 0) ? 'Tap with a second finger to throw coconuts and clear a path' : 'Press Space to throw coconuts and clear a path';
+    tip.hidden = !wantTip;
+  }
   updateDebug(now);
   requestAnimationFrame(frame);
 }
@@ -187,9 +202,9 @@ function frame(now) {
 on(EVENTS.RUN_OVER, (d) => {
   if (state !== 'PLAYING') return;
   let newHigh = false;
-  if (d.mode === 'compete' && d.score > 0) {
+  if (d.score > 0) {
     newHigh = qualifiesForHighScore(d.score);
-    addHighScore(d.score);
+    addHighScore(d.score, d.mode);
   }
   $('#ride-over-score').textContent = String(d.score);
   $('#ride-over-time').textContent = `${Math.floor(d.distance)} m · ${d.nearMisses} near miss${d.nearMisses === 1 ? '' : 'es'}`;
@@ -216,7 +231,7 @@ function boot() {
   blockZoomAndScroll();
   ['touchend', 'keydown'].forEach((n) => window.addEventListener(n, unlockAudio, { passive: true }));
   showHint();
-  initInput(canvas, { onDebugToggle: toggleDebug, onSpawnWave: () => { if (state === 'PLAYING') spawnHazard(); } });
+  initInput(canvas, { onDebugToggle: toggleDebug, onSpawnWave: () => { if (state === 'PLAYING') spawnHazard(); }, onFire: () => { if (state === 'PLAYING') shootCoconut(); } });
   document.addEventListener('visibilitychange', () => {
     setAudioHidden(document.hidden);
     if (document.hidden) {

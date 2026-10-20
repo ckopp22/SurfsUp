@@ -59,6 +59,7 @@ function keyboardVector() {
 
 // ---- floating joystick ----
 const joy = { id: null, bx: 0, by: 0, dx: 0, dy: 0 };
+const touches = new Set(); // ids of the fingers currently down on the canvas
 
 function joystickVector() {
   if (joy.id === null) return { x: 0, y: 0 };
@@ -84,6 +85,7 @@ export function getInputVector() {
 
 export function clearInput() {
   keys.clear();
+  touches.clear();
   joy.id = null;
   joy.dx = joy.dy = 0;
 }
@@ -93,7 +95,7 @@ export function setInputEnabled(on) {
   if (!on) clearInput();
 }
 
-export function initInput(canvas, { onDebugToggle, onSpawnWave = () => {}, onToggleForgiving = () => {} }) {
+export function initInput(canvas, { onDebugToggle, onSpawnWave = () => {}, onToggleForgiving = () => {}, onFire = () => {} }) {
   const J = INPUT.joystick;
   const D = INPUT.debugTap;
   let taps = [];
@@ -101,6 +103,7 @@ export function initInput(canvas, { onDebugToggle, onSpawnWave = () => {}, onTog
   window.addEventListener('keydown', (e) => {
     if (e.key === '`') { onDebugToggle(); return; }
     const k = e.key.toLowerCase();
+    if (k === ' ') { e.preventDefault(); if (enabled) onFire(); return; } // Space: throw a coconut (held = keeps throwing)
     if (k === 'n') { if (!e.repeat) onSpawnWave(); return; }
     if (k === 'g') { if (!e.repeat) onToggleForgiving(); return; }
     if (!KEY_DIR[k]) return;
@@ -123,6 +126,12 @@ export function initInput(canvas, { onDebugToggle, onSpawnWave = () => {}, onTog
       taps.push(now);
       if (taps.length >= D.count) { taps = []; onDebugToggle(); }
       return;
+    }
+
+    // a second finger tapping while another is down throws a coconut
+    if (e.pointerType !== 'mouse') {
+      if (touches.size > 0 && enabled) { touches.add(e.pointerId); onFire(); e.preventDefault(); return; }
+      touches.add(e.pointerId);
     }
 
     if (!enabled || joy.id !== null || !getSettings().joystick) return;
@@ -153,7 +162,8 @@ export function initInput(canvas, { onDebugToggle, onSpawnWave = () => {}, onTog
     joy.id = null;
     joy.dx = joy.dy = 0;
   };
-  canvas.addEventListener('pointerup', release);
-  canvas.addEventListener('pointercancel', release);
-  canvas.addEventListener('lostpointercapture', release);
+  const lift = (e) => { touches.delete(e.pointerId); release(e); };
+  canvas.addEventListener('pointerup', lift);
+  canvas.addEventListener('pointercancel', lift);
+  canvas.addEventListener('lostpointercapture', lift);
 }

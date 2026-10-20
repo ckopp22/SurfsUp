@@ -1,6 +1,6 @@
 # Surf's Up — Master Design Document (MDD)
 
-**Version:** 2.0 (endless carving runner)
+**Version:** 2.1 (endless carving runner, landscape)
 **Build tool:** Claude Code in VS Code
 **Hosting:** GitHub Pages (commit + push to deploy)
 **Platforms:** Any modern browser, installable PWA on iPhone home screen (primary target), desktop with keyboard
@@ -77,7 +77,7 @@ Surf's Up is a top-down endless-runner surfing game. The rider is already riding
 - Game canvas fills the **entire** screen edge to edge (ocean color extends under the notch/home indicator).
 - All interactive UI (sound toggle, mode toggle, buttons, HUD score) is inset using `env(safe-area-inset-top/right/bottom/left)`.
 - Use `100dvh` (with `100vh` fallback) for full-height layout. Handle orientation/resize events by resizing the canvas.
-- Target portrait. If landscape, either support it with the same safe-area logic or show a "rotate to portrait" message (decision: support both if trivial, otherwise lock to portrait in manifest with `"orientation": "portrait"`).
+- **Landscape only.** The manifest sets `"orientation": "landscape"`; iOS ignores that for installed apps, so a full-screen "Rotate your phone to landscape" message covers everything while a touch device is held in portrait, and a run in progress pauses. Insets are applied on all four sides (in landscape the notch is on the left or right). On a short screen the menus switch to a compact two-column layout.
 
 ### 3.3 Disable zoom, scrolling, and selection
 ```css
@@ -121,7 +121,7 @@ All screens share a persistent top bar (safe-area inset):
 - Shows final score, "New High Score!" if applicable, buttons: **Play Again**, **Menu**.
 
 ### 4.4 High Scores
-- List of top 10 scores for **Compete** mode (date shown). Fun mode has no score table (optionally show "Best ride" stat).
+- One top-10 list of the best scores from both modes, each row tagged **C** (Compete) or **F** (Fun), with the date.
 - Back button. Clear Scores button with confirm prompt.
 
 ### 4.5 Settings
@@ -138,19 +138,21 @@ All screens share a persistent top bar (safe-area inset):
 
 | | **Compete** | **Fun** |
 |---|---|---|
-| Goal | Highest score (distance plus near-miss bonuses) | Ride as long as you like |
-| End condition | The first collision ends the run | Never ends; quit via pause menu |
-| Collisions | Wipeout, then Game Over | Bump: brief slowdown, no penalty |
-| High scores | Saved | Not saved |
-| Difficulty ramp | Full | Gentle (slower ramp, fewer hazards) |
+| Goal | Highest score (distance plus near-miss bonuses) | Highest score, with coconuts to clear a path |
+| End condition | The first collision ends the run | The first collision ends the run |
+| Collisions | Wipeout, then Game Over | Wipeout, then Game Over |
+| High scores | Saved (tagged C) | Saved (tagged F), same top-10 list |
+| Hazards | Sharks swim, other surfers ride and weave; every row has a gap | Nothing moves; later whole walls block the face and must be shot through |
+| Difficulty ramp | Full | Gentler (slower ramp, lower speed cap, wider gaps) |
+| Coconuts | None | Throw coconuts to destroy hazards (see 6.8) |
 
 ---
 
 ## 6. Gameplay
 
 ### 6.1 Perspective and World
-- Top-down 2D view, portrait orientation. The sand strip is at the bottom of the screen.
-- **The wave wall:** the crest runs along the bottom, just above the sand. The wave face rises from it toward the ocean and fills about 70-75% of the screen height (capped so the rider stays below the top bar). The face never ends and never changes shape.
+- Top-down 2D view, landscape orientation (the player sees far more of the course ahead). The sand strip is at the bottom of the screen.
+- **The wave wall:** the crest runs along the bottom, just above the sand. The wave face rises from it toward the ocean and fills as much of the screen height as fits below the top bar (about 70-75% in portrait, about 60% on a landscape phone). The face never ends and never changes shape.
 - **The camera** scrolls horizontally and is locked to the rider (the rider sits about 30% from the left). Ripples, foam and face streaks scroll past in world coordinates to give a sense of speed. There is no vertical scrolling.
 
 ### 6.2 Rider and Carving (snowboard feel)
@@ -159,15 +161,19 @@ All screens share a persistent top bar (safe-area inset):
 - Across-face speed comes from forward speed and board angle (the faster you go, the quicker a given angle crosses the face).
 - The board points along the path, banks into turns, and throws spray from its tail in proportion to how hard it is carving.
 - The rider is kept inside the face; at the edges the board straightens out.
+- Carving angle, rock sizes and gap widths scale down on a short face (landscape) so the feel and fairness stay similar.
 
 ### 6.3 Controls
 - **Keyboard:** W/S and Up/Down arrows steer. Left/right are ignored.
+- **Fire (Fun mode only):** tap with a **second finger** anywhere on the canvas while the first finger is steering, or press **Space** on desktop.
 - **Touch:** the floating joystick (touch anywhere in the lower ~70% of the screen); only its vertical component steers, scaled by how far it is pushed. Safe-area and multi-touch rules as before.
 
 ### 6.4 Hazards
 - **Rocks:** stationary; spawn ahead of the rider and scroll toward them. Sizes vary; clusters form gates and gaps.
 - **Sharks:** move across the face diagonally as they approach, so they must be led, not just avoided.
+- **Fun mode:** hazards do not move (sharks and surfers just sit in the water). From mid-ramp, **walls** appear: a full-height barrier with no gap, built from rocks (3 hits), sharks (5) and surfers (1). The cheapest lane never needs more hits than the current difficulty allows (1 early, up to 3 late), so the rider must shoot a path through. A red "WALL!" bar warns from the right edge.
 - **Other surfers:** ride the same direction at a slower, varying speed and weave gently; the rider overtakes them.
+- **Health:** other surfers take 1 coconut hit to destroy, rocks 3, sharks 5.
 - Hazards spawn off-screen to the right. The spawner always leaves a passable path (a gap wide enough for the rider at the current speed).
 
 ### 6.5 Difficulty
@@ -178,7 +184,12 @@ All screens share a persistent top bar (safe-area inset):
 
 ### 6.7 Collisions
 - **Compete:** a collision is a wipeout (tumble animation, ~1 s), then Game Over with the final score and "New High Score!" if it qualifies.
-- **Fun:** a collision bumps the rider, slows them briefly, and the run continues.
+- **Fun:** same as Compete: a collision is a wipeout, then Game Over. The score is saved to the same list, tagged F.
+
+### 6.8 Coconuts (Fun mode only)
+- Firing throws a coconut straight ahead along the wave from the rider's position: it flies along the rider's current row, **not** in the direction the board is facing.
+- A coconut that touches a hazard deals 1 damage and is used up. Hazards flash when hit and show remaining health pips; at 0 health they disappear in a splash. Destroying hazards does not change the score.
+- There is a short cooldown between shots and a cap on coconuts in flight. Ammo is unlimited.
 
 ---
 
@@ -233,10 +244,10 @@ Within PLAYING, the rider sub-state: `RIDING → WIPEOUT → (Fun: RIDING | Comp
 ```json
 {
   "surfsup.settings": { "sfx": true, "music": true, "joystick": true, "mode": "compete" },
-  "surfsup.highscores": [ { "score": 1240, "date": "2026-10-19" } ]
+  "surfsup.highscores": [ { "score": 1240, "date": "2026-10-19", "mode": "compete" } ]
 }
 ```
-- Keep top 10 Compete scores, sorted descending.
+- Keep the top 10 scores across both modes, sorted descending (older entries without a mode count as Compete).
 - All reads/writes wrapped in try/catch (storage may be unavailable in private browsing).
 
 ---

@@ -187,3 +187,61 @@ button {
   background: rgba(10, 90, 128, 0.85);
 }
 .hint-x { min-width: 44px; min-height: 44px; border: 0; border-radius: 50%; background: transparent; font-size: 18px; }
+
+.tip {
+  position: fixed; z-index: 9; margin: 0; left: 50%; transform: translateX(-50%);
+  top: calc(var(--sat) + var(--topbar-h) + 14px); width: max-content; max-width: 72%;
+  padding: 6px 14px; border-radius: 16px; font-size: 14px; font-weight: 600; text-align: center;
+  background: rgba(10, 90, 128, 0.8); pointer-events: none;
+}
+
+.score-mode { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 800; background: rgba(255, 255, 255, 0.22); align-self: center; }
+
+/* ---- landscape phone layout ---- */
+#rotate {
+  display: none; position: fixed; inset: 0; z-index: 100;
+  flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+  padding: 24px; box-sizing: border-box; text-align: center;
+  background: var(--deep); font-size: 20px; font-weight: 700;
+}
+#rotate p { margin: 0; }
+.rotate-icon { font-size: 64px; line-height: 1; }
+@media (orientation: portrait) and (pointer: coarse) { #rotate { display: flex; } }
+
+@media (max-height: 520px) {
+  .screen {
+    padding: calc(var(--sat) + 10px) calc(var(--sar) + 16px) calc(var(--sab) + 10px) calc(var(--sal) + 16px);
+    gap: 10px;
+  }
+  .title { font-size: 52px; margin: 0; }
+  .btn { min-height: 48px; font-size: 18px; }
+  .stack { gap: 10px; }
+  .heading { font-size: 28px; }
+  .scrollable { max-height: calc(100dvh - 80px); }
+
+  #screen-menu { flex-direction: row; gap: 56px; }
+
+  #screen-highscores {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); column-gap: 32px;
+    grid-template-areas: "h list" "s list" "b list"; align-content: center; justify-items: center;
+  }
+  #screen-highscores .heading { grid-area: h; align-self: end; }
+  #screen-highscores .subheading { grid-area: s; margin: 0; }
+  #screen-highscores #score-list { grid-area: list; }
+  #screen-highscores .stack { grid-area: b; align-self: start; }
+
+  #screen-settings {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); column-gap: 32px;
+    grid-template-areas: "h panel" "b panel"; align-content: center; justify-items: center;
+  }
+  #screen-settings .heading { grid-area: h; align-self: end; }
+  #screen-settings .panel { grid-area: panel; }
+  #screen-settings .stack { grid-area: b; align-self: start; }
+
+  .switch-row { min-height: 50px; }
+  .big-score { font-size: 40px !important; }
+  .overlay .panel { padding: 12px 16px; gap: 8px; }
+  .overlay .stack { flex-direction: row; width: auto; }
+  .overlay .stack .btn { flex: 1; min-width: 120px; }
+}

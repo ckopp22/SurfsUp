@@ -1,5 +1,5 @@
 // Bump CACHE_VERSION on every deploy so clients pick up new files.
-const CACHE_VERSION = 'v17';
+const CACHE_VERSION = 'v22';
 const CACHE_NAME = `surfsup-${CACHE_VERSION}`;
 
 const APP_FILES = [

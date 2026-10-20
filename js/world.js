@@ -1,6 +1,6 @@
 // The camera scrolls horizontally and stays locked to the rider.
 export const WORLD_CONFIG = {
-  camTargetFrac: 0.3, // where the rider sits on screen (fraction of screen width from the left)
+  camTargetFrac: 0.25, // where the rider sits on screen (fraction of screen width from the left)
 };
 
 export const camera = { x: 0 };

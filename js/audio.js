@@ -153,7 +153,6 @@ function noiseBurst(dur, f0, f1, vol, type) {
 // ---- sound effects ----
 export function sfxTap() { tone(520, 0.06, 'triangle', 0.25, 700); }
 function sfxNearMiss() { tone(880, 0.09, 'triangle', 0.35); tone(1320, 0.14, 'triangle', 0.35, undefined, ctx ? ctx.currentTime + 0.07 : 0); }
-function sfxBump() { tone(170, 0.2, 'sine', 0.7, 60); noiseBurst(0.25, 1200, 200, 0.35); }
 function sfxWipeout() { noiseBurst(0.9, 2400, 180, 0.75); tone(130, 0.5, 'sine', 0.8, 45); }
 export function sfxGameOver(newHigh) {
   if (!ctx) return;
@@ -163,7 +162,6 @@ export function sfxGameOver(newHigh) {
 }
 
 on(EVENTS.NEAR_MISS, sfxNearMiss);
-on(EVENTS.HIT, sfxBump);
 on(EVENTS.WIPEOUT, sfxWipeout);
 
 // Called every frame. steer = the up/down input (-1 up .. +1 down). Swooshes play on the press only, not when the board straightens out.

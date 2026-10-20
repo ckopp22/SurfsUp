@@ -4,7 +4,7 @@ import { WORLD_CONFIG, camera, snapCamera, updateCamera } from './world.js';
 import { getInputVector } from './input.js';
 import { getSize, getInsets, sandTop } from './render.js';
 import { createRun, updateRide, runDistance, RIDE_CONFIG, SCORE_CONFIG } from './ride.js';
-import { HAZARD_CONFIG, createHazards, resetHazards, updateHazards, spawnNow } from './hazards.js';
+import { HAZARD_CONFIG, createHazards, resetHazards, updateHazards, spawnNow, fireCoconut } from './hazards.js';
 import { emit, EVENTS } from './events.js';
 
 export const game = {
@@ -78,6 +78,8 @@ export function resetGame() {
   game.popups.length = 0;
   resetHazards(game.hz, camera.x + w + HAZARD_CONFIG.spawnMargin, game.run.speed, game.bounds);
   game.mode = game.hz.mode;
+  game.run.maxSpeed = game.mode === 'fun' ? RIDE_CONFIG.funMaxSpeed : RIDE_CONFIG.maxSpeed;
+  game.player.vx = game.run.speed;
   game.score.bonus = 0;
   game.score.nearMisses = 0;
   game.endT = 0;
@@ -92,6 +94,13 @@ function hazardView() {
   v.player = game.player;
   v.bounds = game.bounds;
   return v;
+}
+
+// Fun mode: throw a coconut straight ahead along the rider's row.
+export function shootCoconut() {
+  const p = game.player;
+  if (p.state !== 'RIDING' || game.mode !== 'fun') return;
+  if (fireCoconut(game.hz, p)) emit(EVENTS.COCONUT, {});
 }
 
 // Debug: drop a hazard just off the right edge.
@@ -111,18 +120,6 @@ function wipeout() {
   emit(EVENTS.WIPEOUT, {});
 }
 
-// Fun mode: shoved away, slowed down, and briefly invulnerable.
-function bump(h) {
-  const p = game.player;
-  const C = RIDE_CONFIG;
-  game.run.speedMul = C.bumpSpeed;
-  game.run.omega = 0;
-  game.run.phi = Math.max(-C.maxAngle, Math.min(C.maxAngle, game.run.phi + (p.y >= h.y ? 1 : -1) * C.bumpNudge));
-  p.invuln = C.invulnTime;
-  addEffect(1, p.x, p.y, 40);
-  emit(EVENTS.HIT, {});
-}
-
 function awardNearMiss() {
   const bonus = SCORE_CONFIG.nearMissPoints;
   game.score.bonus += bonus;
@@ -136,9 +133,8 @@ function handleHazardEvents() {
   if (p.state !== 'RIDING') return;
   const hz = game.hz;
   for (let i = 0; i < hz.touchList.length; i++) {
-    if (p.invuln > 0) continue;
-    if (game.mode === 'fun') bump(hz.touchList[i]);
-    else { wipeout(); return; }
+    wipeout(); // touching anything ends the run, in both modes
+    return;
   }
   for (let i = 0; i < hz.nearList.length; i++) awardNearMiss();
 }
@@ -170,7 +166,11 @@ export function updateGame(dt) {
   updateCamera(p.x, game.field.w);
   updateHazards(game.hz, dt, hazardView());
   handleHazardEvents();
-  if (p.invuln > 0) p.invuln = Math.max(0, p.invuln - dt);
+  for (let i = 0; i < game.hz.hitFx.length; i++) {
+    const f = game.hz.hitFx[i];
+    addEffect(1, f.kill ? f.hx : f.x, f.kill ? f.hy : f.y, f.kill ? 38 : 14);
+    emit(f.kill ? EVENTS.HAZARD_DESTROYED : EVENTS.HAZARD_HIT, {});
+  }
   updateWake(game.wake, p, dt);
   updateFloating(game.effects, dt);
   updateFloating(game.popups, dt);
