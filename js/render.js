@@ -1,5 +1,5 @@
 import { PLAYER_CONFIG } from './player.js';
-import { camera, WORLD_CONFIG, wedgeStart, beachEdgeY } from './world.js';
+import { camera } from './world.js';
 
 export const OCEAN = {
   maxDpr: 2,
@@ -137,32 +137,6 @@ export function drawShore(ctx, t, wash) {
     ctx.globalAlpha = 1;
   }
 
-  // sand wedge that curves up and closes the water at the beach end of the break
-  const x0 = wedgeStart();
-  if (camera.x + width > x0) {
-    const from = Math.max(x0, camera.x - 10);
-    const to = camera.x + width + 10;
-    ctx.fillStyle = c.sand;
-    ctx.beginPath();
-    ctx.moveTo(from - camera.x, height);
-    for (let x = from; ; x += 8) {
-      const xx = x < to ? x : to;
-      ctx.lineTo(xx - camera.x, beachEdgeY(xx, waterH));
-      if (xx >= to) break;
-    }
-    ctx.lineTo(to - camera.x, height);
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    for (let x = from; ; x += 8) {
-      const xx = x < to ? x : to;
-      if (xx === from) ctx.moveTo(xx - camera.x, beachEdgeY(xx, waterH)); else ctx.lineTo(xx - camera.x, beachEdgeY(xx, waterH));
-      if (xx >= to) break;
-    }
-    ctx.stroke();
-  }
 }
 
 // Everything drawn between these is in world coordinates (scrolled by the camera).
@@ -174,168 +148,76 @@ export function endWorld(ctx) {
   ctx.restore();
 }
 
-const WAVE_STYLE = {
-  face: '#0a5a80', foam: '#ffffff', swell: '#ffffff',
-  swellWidth: 64,    // px half-width of the warning band
-  swellAlpha: 0.13,
-  faceWidth: 84,     // px, max depth of the dark face
-  faceAlpha: 0.85,
+const WALL = {
+  face: '#0a5a80', faceDeep: '#084a6a', faceAlpha: 0.88,
+  lip: 46,            // px of lighter water rising into the top of the face
+  lanes: 9,           // rows of speed streaks on the face
+  cell: 200,          // px between streak slots along the wave
+  streakAlpha: 0.15,
+  foamStep: 10,       // px between crest foam segments
   foamWidth: 8,
-  closeFoamWidth: 32,
-  foamStep: 10,      // px between path points
-  foamAmp: 4,      // px wobble of the foam line
-  trailLen: 280,     // px of fading foam blobs behind the pocket
-  trailStep: 22,
-  trailRadius: 11,
-  pocketRadius: 22,
-  pocketHalo: 38,
-  hint: '#ffe08a',   // catchable glow
-  cullMargin: 60,    // px beyond the screen edges still drawn
+  foamAmp: 4,
 };
-const clampN = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+const hash = (n) => { const v = Math.sin(n * 12.9898) * 43758.5453; return v - Math.floor(v); };
 
-// Band between offsets dIn..dOut (along the ocean-side normal) from crest distance s0 to s1.
-function strip(ctx, w, ax, ay, s0, s1, dIn, dOut) {
-  const x0 = ax + w.px * s0, y0 = ay + w.py * s0;
-  const x1 = ax + w.px * s1, y1 = ay + w.py * s1;
-  ctx.beginPath();
-  ctx.moveTo(x0 + w.nx * dIn, y0 + w.ny * dIn);
-  ctx.lineTo(x1 + w.nx * dIn, y1 + w.ny * dIn);
-  ctx.lineTo(x1 + w.nx * dOut, y1 + w.ny * dOut);
-  ctx.lineTo(x0 + w.nx * dOut, y0 + w.ny * dOut);
-  ctx.closePath();
-  ctx.fill();
-}
+// The endless wave wall: a face rising from the crest (bottom) toward the ocean, with streaks and foam
+// keyed to world position so they scroll past as the camera moves.
+export function drawWall(ctx, field, t) {
+  const W = WALL;
+  const bot = field.crestY;
+  const top = bot - field.faceDepth;
 
-// Wavy foam made of short segments keyed to absolute crest position, so it stays put while the camera scrolls.
-function foamSegs(ctx, w, ax, ay, s0, s1, off, amp, t, mod, gap, phaseK) {
-  const step = WAVE_STYLE.foamStep;
-  const k0 = Math.floor(s0 / step);
-  const k1 = Math.ceil(s1 / step);
+  ctx.fillStyle = '#ffffff';
+  ctx.globalAlpha = 0.07;
+  ctx.fillRect(0, top - W.lip, width, W.lip);
+  ctx.fillRect(0, top - W.lip * 0.5, width, W.lip * 0.5);
+  ctx.globalAlpha = W.faceAlpha;
+  ctx.fillStyle = W.face;
+  ctx.fillRect(0, top, width, field.faceDepth);
+  ctx.fillStyle = W.faceDeep;
+  ctx.globalAlpha = 0.35;
+  ctx.fillRect(0, bot - field.faceDepth * 0.35, width, field.faceDepth * 0.35);
+
+  // speed streaks
+  const k0 = Math.floor((camera.x - 120) / W.cell);
+  const k1 = Math.floor((camera.x + width + 120) / W.cell);
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  ctx.globalAlpha = W.streakAlpha;
   ctx.beginPath();
-  for (let k = k0; k < k1; k++) {
-    if ((k + phaseK) % mod < gap) continue;
-    const sa = Math.max(s0, k * step);
-    const sb = Math.min(s1, (k + 1) * step);
-    const oa = off + Math.sin(sa * 0.3 + t * 4 + w.phase) * amp;
-    const ob = off + Math.sin(sb * 0.3 + t * 4 + w.phase) * amp;
-    ctx.moveTo(ax + w.px * sa + w.nx * oa, ay + w.py * sa + w.ny * oa);
-    ctx.lineTo(ax + w.px * sb + w.nx * ob, ay + w.py * sb + w.ny * ob);
+  for (let lane = 0; lane < W.lanes; lane++) {
+    const y = top + ((lane + 0.5) / W.lanes) * field.faceDepth;
+    for (let k = k0; k <= k1; k++) {
+      if (hash(k * 31 + lane * 7.3) > 0.6) continue;
+      const x = k * W.cell + hash(k * 17 + lane) * W.cell - camera.x;
+      const len = 50 + hash(k + lane * 3) * 90;
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + len, y);
+    }
   }
   ctx.stroke();
-}
 
-function drawWave(ctx, w, t) {
-  const S = WAVE_STYLE;
-  const ax = w.cx - (w.px * w.L) / 2;
-  const ay = w.cy - (w.py * w.L) / 2;
-  const fade = w.fade;
-  const closing = w.state === 'CLOSING';
-
-  // only the stretch of crest near the camera is drawn
-  const sLo = clampN((camera.x - S.cullMargin - ax) / w.px, 0, w.L);
-  const sHi = clampN((camera.x + width + S.cullMargin - ax) / w.px, 0, w.L);
-
-  if (sHi > sLo) {
-    // SWELL: faint lighter band across the crest
-    const sa = S.swellAlpha * w.swellAlpha * (1 - 0.5 * w.build) * fade;
-    if (sa > 0.002) {
-      ctx.globalAlpha = sa;
-      ctx.fillStyle = S.swell;
-      strip(ctx, w, ax, ay, sLo, sHi, -S.swellWidth, S.swellWidth);
+  // crest foam: wavy dashed line along the bottom of the face
+  const s0 = Math.floor((camera.x - 20) / W.foamStep);
+  const s1 = Math.ceil((camera.x + width + 20) / W.foamStep);
+  const phaseK = Math.floor(t * 2.5);
+  for (let layer = 0; layer < 2; layer++) {
+    ctx.globalAlpha = layer === 0 ? 0.9 : 0.55;
+    ctx.lineWidth = layer === 0 ? W.foamWidth : 3;
+    const off = layer === 0 ? 0 : -16;
+    const amp = layer === 0 ? W.foamAmp : W.foamAmp * 1.6;
+    ctx.beginPath();
+    for (let k = s0; k < s1; k++) {
+      if (layer === 0 ? (k + phaseK) % 3 === 0 : (k + phaseK + 1) % 4 < 2) continue;
+      const xa = k * W.foamStep;
+      const xb = xa + W.foamStep;
+      ctx.moveTo(xa - camera.x, bot + off + Math.sin(xa * 0.3 + t * 4 + layer) * amp);
+      ctx.lineTo(xb - camera.x, bot + off + Math.sin(xb * 0.3 + t * 4 + layer) * amp);
     }
-
-    if (w.build > 0) {
-      // dark face on the ocean side: tall where unbroken, low where the pocket has passed
-      const fw = S.faceWidth * w.build * (1 - w.flat);
-      ctx.fillStyle = S.face;
-      if (fw > 1) {
-        const sP = closing ? w.L : w.s;
-        if (sHi > sP) {
-          ctx.globalAlpha = S.faceAlpha * fade;
-          strip(ctx, w, ax, ay, Math.max(sLo, sP), sHi, 0, fw);
-        }
-        if (sP > sLo) {
-          ctx.globalAlpha = S.faceAlpha * 0.6 * fade;
-          strip(ctx, w, ax, ay, sLo, Math.min(sHi, sP), 0, fw * 0.55);
-        }
-      }
-
-      ctx.strokeStyle = S.foam;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-
-      // unbroken section: smooth thin lip, no foam
-      if (!closing && sHi > w.s) {
-        ctx.globalAlpha = 0.55 * w.build * fade;
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        const s0 = Math.max(sLo, w.s);
-        ctx.moveTo(ax + w.px * s0, ay + w.py * s0);
-        ctx.lineTo(ax + w.px * sHi, ay + w.py * sHi);
-        ctx.stroke();
-      }
-
-      // broken section: wavy foam (whole crest while closing)
-      const endS = Math.min(sHi, closing ? w.L : w.s);
-      if (endS - sLo > 1) {
-        const phaseK = Math.floor(t * 2.5);
-        ctx.globalAlpha = 0.9 * fade;
-        ctx.lineWidth = S.foamWidth + (S.closeFoamWidth - S.foamWidth) * w.flat;
-        foamSegs(ctx, w, ax, ay, sLo, endS, 0, S.foamAmp, t, 3, 1, phaseK);
-        ctx.globalAlpha = 0.6 * fade;
-        ctx.lineWidth = 3;
-        foamSegs(ctx, w, ax, ay, sLo, endS, 14 + 8 * w.flat, S.foamAmp * 1.6, t + 1.3, 4, 2, phaseK + 1);
-      }
-
-      // fading foam blobs trailing the pocket
-      if (!closing && w.s > 2) {
-        ctx.fillStyle = S.foam;
-        const len = Math.min(S.trailLen, w.s);
-        for (let d = S.trailStep; d < len; d += S.trailStep) {
-          const f = 1 - d / S.trailLen;
-          const sd = w.s - d;
-          if (sd < sLo || sd > sHi) continue;
-          const wob = Math.sin(sd * 0.5 + t * 3 + w.phase) * 4;
-          ctx.globalAlpha = 0.5 * f * fade;
-          ctx.beginPath();
-          ctx.arc(ax + w.px * sd + w.nx * wob, ay + w.py * sd + w.ny * wob, 2 + S.trailRadius * f, 0, 6.2832);
-          ctx.fill();
-        }
-      }
-    }
-  }
-
-  // pocket burst
-  if (w.pocketScale > 0.02) {
-    const px = ax + w.px * w.s;
-    const py = ay + w.py * w.s;
-    if (px > camera.x - 60 && px < camera.x + width + 60) {
-      const pulse = w.pocketScale * (1 + 0.12 * Math.sin(t * 9));
-      ctx.fillStyle = S.foam;
-      ctx.globalAlpha = 0.3 * w.pocketScale * fade;
-      ctx.beginPath();
-      ctx.arc(px, py, S.pocketHalo * pulse, 0, 6.2832);
-      ctx.fill();
-      if (w.hint > 0.02) {
-        ctx.fillStyle = S.hint;
-        ctx.globalAlpha = 0.55 * w.hint * fade * (0.8 + 0.2 * Math.sin(t * 10));
-        ctx.beginPath();
-        ctx.arc(px, py, S.pocketHalo * 1.3, 0, 6.2832);
-        ctx.fill();
-        ctx.fillStyle = S.foam;
-      }
-      ctx.globalAlpha = 0.95 * fade;
-      ctx.beginPath();
-      ctx.arc(px, py, S.pocketRadius * pulse, 0, 6.2832);
-      ctx.fill();
-    }
+    ctx.stroke();
   }
   ctx.globalAlpha = 1;
-}
-
-export function drawWaves(ctx, waves, t) {
-  for (let i = 0; i < waves.length; i++) drawWave(ctx, waves[i], t);
 }
 
 export function drawWake(ctx, wake) {
@@ -344,7 +226,7 @@ export function drawWake(ctx, wake) {
   for (const p of wake) {
     ctx.globalAlpha = p.alpha * (1 - p.age / w.life);
     ctx.beginPath();
-    ctx.arc(p.x, p.y, w.startRadius + w.growth * p.age, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, w.startRadius * p.k + w.growth * p.age, 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.globalAlpha = 1;
@@ -355,6 +237,7 @@ export function drawPlayer(ctx, p) {
   const W = PLAYER_CONFIG.boardWidth;
   const c = p.crouch;
   const wiping = p.state === 'WIPEOUT';
+  if (p.invuln > 0 && Math.floor(p.invuln * 12) % 2 === 0) ctx.globalAlpha = 0.35; // blinking after a bump
   ctx.save();
   ctx.translate(p.x, p.y);
   if (wiping) {
@@ -406,22 +289,130 @@ export function drawPlayer(ctx, p) {
     ctx.arc(p.x + 8 + 18 * p.wipeT, p.y - 10 * Math.sin(p.wipeT * Math.PI), 4.5, 0, Math.PI * 2);
     ctx.fill();
   }
+  ctx.globalAlpha = 1;
 }
 
-// Sweet-spot and outer rings around the pocket while riding.
-const RING_COL = { SWEET_SPOT: 'rgba(255,255,255,0.7)', OUTER_ZONE: '#ffb020', OUT: '#ff5a3c' };
-export function drawRideRings(ctx, r, sweet, outer) {
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = RING_COL[r.zone];
-  ctx.globalAlpha = r.zone === 'SWEET_SPOT' ? 0.5 : 0.9;
+const HZ = {
+  rock: '#56606b', rockLight: '#8793a0', foam: '#ffffff',
+  shark: '#4a5d73', sharkDark: '#2f3e51',
+  suit: '#123c52', skin: '#f1c9a0',
+};
+
+function drawSurferFigure(ctx, x, y, heading, color) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(heading);
+  ctx.fillStyle = color;
   ctx.beginPath();
-  ctx.arc(r.px, r.py, sweet, 0, 6.2832);
-  ctx.stroke();
-  ctx.globalAlpha = 0.25;
-  ctx.strokeStyle = '#ffffff';
+  ctx.ellipse(0, 0, 21, 8, 0, 0, 6.2832);
+  ctx.fill();
+  ctx.fillStyle = HZ.suit;
   ctx.beginPath();
-  ctx.arc(r.px, r.py, outer, 0, 6.2832);
-  ctx.stroke();
+  ctx.roundRect(-7, -6, 13, 12, 4);
+  ctx.fill();
+  ctx.fillStyle = HZ.skin;
+  ctx.beginPath();
+  ctx.arc(5, 0, 4, 0, 6.2832);
+  ctx.fill();
+  ctx.restore();
+}
+
+// Rocks, sharks and other surfers (world coordinates).
+export function drawHazards(ctx, list, t) {
+  const left = camera.x - 90;
+  const right = camera.x + width + 90;
+  for (let i = 0; i < list.length; i++) {
+    const h = list[i];
+    if (h.x < left || h.x > right) continue;
+    if (h.kind === 'rock') {
+      ctx.strokeStyle = HZ.foam;
+      ctx.lineWidth = 3;
+      ctx.globalAlpha = 0.55;
+      ctx.beginPath();
+      ctx.arc(h.x, h.y, h.size + 5 + Math.sin(t * 3 + h.phase) * 1.5, 0, 6.2832);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = HZ.rock;
+      ctx.beginPath();
+      ctx.arc(h.x, h.y, h.size, 0, 6.2832);
+      ctx.fill();
+      ctx.fillStyle = HZ.rockLight;
+      ctx.globalAlpha = 0.6;
+      ctx.beginPath();
+      ctx.arc(h.x - h.size * 0.28, h.y - h.size * 0.28, h.size * 0.5, 0, 6.2832);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    } else if (h.kind === 'shark') {
+      const L = h.size / 2;
+      ctx.save();
+      ctx.translate(h.x, h.y);
+      ctx.rotate(Math.atan2(h.vy, h.vx));
+      ctx.strokeStyle = HZ.foam;
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      ctx.globalAlpha = 0.45;
+      ctx.beginPath();
+      ctx.moveTo(-L - 6, -10); ctx.lineTo(-L - 30, -16);
+      ctx.moveTo(-L - 6, 10); ctx.lineTo(-L - 30, 16);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = HZ.shark;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, L, 11, 0, 0, 6.2832);
+      ctx.fill();
+      ctx.fillStyle = HZ.sharkDark;
+      ctx.beginPath();
+      ctx.moveTo(-L + 4, 0); ctx.lineTo(-L - 12, -10 + Math.sin(t * 8 + h.phase) * 3); ctx.lineTo(-L - 12, 10 + Math.sin(t * 8 + h.phase) * 3);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(8, 0); ctx.lineTo(-8, -8); ctx.lineTo(-8, 8);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    } else {
+      drawSurferFigure(ctx, h.x, h.y, Math.atan2(h.vy, h.vx), h.color);
+    }
+  }
+}
+
+// "!" markers on the right edge for sharks about to swim into view (screen coordinates).
+export function drawWarnings(ctx, list, warnDist, top, bottom, t) {
+  ctx.fillStyle = '#ffb020';
+  for (let i = 0; i < list.length; i++) {
+    const h = list[i];
+    if (h.kind !== 'shark') continue;
+    const off = h.x - (camera.x + width);
+    if (off < 0 || off > warnDist) continue;
+    const y = h.y < top ? top : h.y > bottom ? bottom : h.y;
+    ctx.globalAlpha = (0.55 + 0.4 * Math.sin(t * 14)) * (1 - off / warnDist * 0.5);
+    ctx.beginPath();
+    ctx.moveTo(width - 8, y - 12);
+    ctx.lineTo(width - 8, y + 12);
+    ctx.lineTo(width - 28, y);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// Floating score text next to the rider (world coordinates).
+export function drawPopups(ctx, list, p) {
+  ctx.font = '800 20px -apple-system, system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.lineWidth = 4;
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = 'rgba(0,40,60,0.7)';
+  ctx.fillStyle = '#ffe08a';
+  for (let i = 0; i < list.length; i++) {
+    const t = list[i];
+    const u = t.age / t.life;
+    ctx.globalAlpha = u < 0.7 ? 1 : 1 - (u - 0.7) / 0.3;
+    const x = p.x + t.ox;
+    const y = p.y + t.oy - u * 40;
+    ctx.strokeText(t.text, x, y);
+    ctx.fillText(t.text, x, y);
+  }
   ctx.globalAlpha = 1;
 }
 
@@ -448,52 +439,6 @@ export function drawEffects(ctx, list) {
       }
     }
   }
-  ctx.globalAlpha = 1;
-}
-
-// Target box on the crest at each catchable pocket: be inside it, paddling toward shore.
-export function drawCatchZones(ctx, waves, radius, tol, bias) {
-  for (let i = 0; i < waves.length; i++) {
-    const w = waves[i];
-    if (!w.isRideable || w.ridden) continue;
-    ctx.save();
-    ctx.translate(w.cx - (w.px * w.L) / 2 + w.px * w.s, w.cy - (w.py * w.L) / 2 + w.py * w.s);
-    ctx.rotate(Math.atan2(w.py, w.px));
-    ctx.fillStyle = WAVE_STYLE.hint;
-    ctx.strokeStyle = WAVE_STYLE.hint;
-    ctx.lineWidth = 2;
-    ctx.globalAlpha = 0.1 + 0.2 * w.hint;
-    ctx.beginPath();
-    ctx.roundRect(-radius, -tol, radius * 2, tol * 2, 10);
-    ctx.fill();
-    ctx.globalAlpha = 0.4 + 0.5 * w.hint;
-    ctx.stroke();
-    // arrow showing the paddle direction: toward shore and down the line
-    const len = Math.hypot(bias, 1);
-    const ax = bias / len, ay = 1 / len; // in the crest frame (x along the crest, y toward shore)
-    ctx.lineWidth = 3;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.globalAlpha = 0.5 + 0.4 * w.hint;
-    ctx.beginPath();
-    ctx.moveTo(-ax * 18, -ay * 18);
-    ctx.lineTo(ax * 18, ay * 18);
-    ctx.moveTo(ax * 18 - (ax * 0.7 - ay * 0.7) * 9, ay * 18 - (ay * 0.7 + ax * 0.7) * 9);
-    ctx.lineTo(ax * 18, ay * 18);
-    ctx.lineTo(ax * 18 - (ax * 0.7 + ay * 0.7) * 9, ay * 18 - (ay * 0.7 - ax * 0.7) * 9);
-    ctx.stroke();
-    ctx.restore();
-  }
-  ctx.globalAlpha = 1;
-}
-
-// Pulsing screen-edge warning while slipping out of the sweet spot.
-export function drawSlipFlash(ctx, level, t) {
-  if (level < 0.02) return;
-  ctx.globalAlpha = 0.5 * level * (0.55 + 0.45 * Math.sin(t * 14));
-  ctx.strokeStyle = '#ff7a3d';
-  ctx.lineWidth = 14;
-  ctx.strokeRect(7, 7, width - 14, height - 14);
   ctx.globalAlpha = 1;
 }
 

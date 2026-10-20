@@ -1,204 +1,182 @@
-import { createPlayer, updatePlayer, updateWake, computeBounds, clampPlayer, PLAYER_CONFIG } from './player.js';
-import { createWaveManager } from './waves.js';
-import { WORLD_CONFIG, snapCamera, updateCamera } from './world.js';
+import { createPlayer, updateWake, computeBounds, PLAYER_CONFIG } from './player.js';
+import { waveGeometry } from './waves.js';
+import { WORLD_CONFIG, camera, snapCamera, updateCamera } from './world.js';
 import { getInputVector } from './input.js';
-import { getSize, getInsets, sandTop, OCEAN } from './render.js';
-import { getSettings } from './storage.js';
+import { getSize, getInsets, sandTop } from './render.js';
+import { createRun, updateRide, runDistance, RIDE_CONFIG, SCORE_CONFIG } from './ride.js';
+import { HAZARD_CONFIG, createHazards, resetHazards, updateHazards, spawnNow } from './hazards.js';
 import { emit, EVENTS } from './events.js';
-import {
-  checkCatch, decayHints, startRide, updateRide, findRespawn, CATCH_RESULT, RIDE_CONFIG, ZONE, catchInfo,
-} from './ride.js';
-
-export const PS = { PADDLING: 'PADDLING', RIDING: 'RIDING', WIPEOUT: 'WIPEOUT', RIDE_COMPLETE: 'RIDE_COMPLETE' };
 
 export const game = {
   player: createPlayer(),
   wake: [],
-  waves: createWaveManager(),
-  field: { w: 0, h: 0, shoreY: 0, breakY0: 0, breakY1: 0 }, // reused each frame, no allocation
-  bounds: { minX: 0, maxX: 0, minY: 0, shoreY: 0, shoreAmp: 0 },
-  ride: null,                          // current ride while RIDING
-  effects: [],                         // splashes and ripples
-  fx: { slip: 0 },                     // 0..1 slip warning intensity
-  stats: { best: 0, last: 0, lastSweet: 0, lastResult: '', catches: 0 },
+  effects: [],                                                  // splashes and ripples
+  popups: [],                                                   // floating "+10 NEAR MISS" text
+  field: { w: 0, h: 0, shoreY: 0, crestY: 0, faceDepth: 0 },    // reused each frame, no allocation
+  bounds: { minY: 0, maxY: 0 },
+  run: createRun(),
+  hz: createHazards(),                                          // rocks, sharks, other surfers
+  hazardView: { camX: 0, w: 0, run: null, player: null, bounds: null }, // reused arguments for the hazard update
+  mode: 'compete',
+  score: { bonus: 0, nearMisses: 0 },
   endT: 0,
   overSent: false,
-  dbg: { catchSpeed: 0, dist: -1 },    // readout values for the nearest catchable pocket
 };
-
-const spot = { x: 0, y: 0 };
 
 function refreshField() {
   const { w, h } = getSize();
-  game.field.w = w;
-  game.field.h = h;
-  game.field.shoreY = sandTop();
-  const minTop = getInsets().top + PLAYER_CONFIG.topUiHeight + 60;
-  game.field.breakY0 = Math.max(minTop, h * WORLD_CONFIG.breakTopFrac);
-  game.field.breakY1 = Math.max(game.field.breakY0 + 40, game.field.shoreY - WORLD_CONFIG.breakShoreGap);
-}
-
-export function spawnWave() {
-  refreshField();
-  game.waves.spawn(game.field);
+  const f = game.field;
+  f.w = w;
+  f.h = h;
+  f.shoreY = sandTop();
+  waveGeometry(f, getInsets().top + PLAYER_CONFIG.topUiHeight + PLAYER_CONFIG.margin);
+  game.bounds = computeBounds(f);
 }
 
 export function refreshBounds() {
-  game.bounds = computeBounds(getInsets(), sandTop(), OCEAN.shoreAmp);
-  clampPlayer(game.player, game.bounds);
+  refreshField();
+  const p = game.player;
+  p.y = Math.max(game.bounds.minY, Math.min(game.bounds.maxY, p.y));
 }
 
 // ---- effects: kind 0 = ripple ring, 1 = splash ----
-function addEffect(kind, x, y, size) {
+export function addEffect(kind, x, y, size) {
   if (game.effects.length >= 24) game.effects.shift();
   game.effects.push({ kind, x, y, size, age: 0, life: kind === 0 ? 0.8 : 0.6 });
 }
 
-function updateEffects(dt) {
-  const list = game.effects;
+// floating text anchored next to the rider
+function addPopup(text) {
+  if (game.popups.length >= 6) game.popups.shift();
+  game.popups.push({ text, ox: 34, oy: -30, age: 0, life: 1.1 });
+}
+
+function updateFloating(list, dt) {
   for (let i = list.length - 1; i >= 0; i--) {
     list[i].age += dt;
     if (list[i].age >= list[i].life) { list[i] = list[list.length - 1]; list.pop(); }
   }
 }
 
+export const distanceMeters = () => runDistance(game.run, game.player);
+export const scoreValue = () => Math.floor(distanceMeters()) + game.score.bonus;
+
 // ---- lifecycle ----
 export function resetGame() {
   refreshField();
-  refreshBounds();
-  const b = game.bounds;
   const { w } = getSize();
   game.player = createPlayer();
-  game.player.x = Math.max(b.minX, w * WORLD_CONFIG.camTargetFrac);
-  const breakY = game.field.breakY0 + (game.field.breakY1 - game.field.breakY0) * (game.player.x / WORLD_CONFIG.rideDistance);
-  game.player.y = Math.max(b.minY, breakY - RIDE_CONFIG.respawnOcean * 0.6); // start in open water on the ocean side
+  game.player.x = w * WORLD_CONFIG.camTargetFrac;
+  game.player.y = game.field.crestY - game.field.faceDepth * 0.5; // start mid-face
+  game.run = createRun();
+  game.run.startX = game.player.x;
+  game.player.vx = game.run.speed;
+  game.player.speed = game.run.speed;
   snapCamera(game.player.x, w);
   game.wake.length = 0;
   game.effects.length = 0;
-  game.waves.reset();
-  game.ride = null;
-  game.fx.slip = 0;
-  game.stats.best = game.stats.last = game.stats.lastSweet = 0;
-  game.stats.lastResult = '';
-  game.stats.catches = 0;
+  game.popups.length = 0;
+  resetHazards(game.hz, camera.x + w + HAZARD_CONFIG.spawnMargin, game.run.speed, game.bounds);
+  game.mode = game.hz.mode;
+  game.score.bonus = 0;
+  game.score.nearMisses = 0;
   game.endT = 0;
   game.overSent = false;
 }
 
-function tryCatch(dt) {
-  const p = game.player;
-  const list = game.waves.waves;
-  let caught = null;
-  let bestDist = Infinity;
-  for (let i = 0; i < list.length; i++) {
-    const w = list[i];
-    if (!w.isRideable || w.ridden || caught) { w.hint *= Math.max(0, 1 - dt * 10); continue; }
-    const res = checkCatch(p, w, dt);
-    if (catchInfo.dist < bestDist) {
-      bestDist = catchInfo.dist;
-      game.dbg.catchSpeed = catchInfo.speed;
-      game.dbg.dist = catchInfo.dist;
-    }
-    if (res === CATCH_RESULT.CAUGHT) caught = w;
-    else if (res === CATCH_RESULT.MISSED) {
-      addEffect(0, p.x, p.y, 34); // the wave passes under the surfer
-      emit(EVENTS.MISS, { wave: w });
-    }
-  }
-  if (bestDist === Infinity) { game.dbg.catchSpeed = 0; game.dbg.dist = -1; }
-  if (caught) {
-    game.ride = startRide(p, caught);
-    p.state = PS.RIDING;
-    game.stats.catches++;
-    addEffect(1, p.x, p.y, 36);
-    emit(EVENTS.CATCH, { wave: caught });
-  }
+function hazardView() {
+  const v = game.hazardView;
+  v.camX = camera.x;
+  v.w = game.field.w;
+  v.run = game.run;
+  v.player = game.player;
+  v.bounds = game.bounds;
+  return v;
 }
 
-function endRide(kind) {
-  const r = game.ride;
+// Debug: drop a hazard just off the right edge.
+export function spawnHazard() {
+  refreshField();
+  spawnNow(game.hz, hazardView());
+}
+
+// ---- collisions ----
+function wipeout() {
   const p = game.player;
-  r.wave.locked = false;
-  game.stats.last = r.time;
-  game.stats.lastSweet = r.sweetTime;
-  game.stats.lastResult = kind;
-  if (r.time > game.stats.best) game.stats.best = r.time;
-  game.ride = null;
-  p.state = kind;
+  p.state = 'WIPEOUT';
   p.wipeT = 0;
   game.endT = 0;
   game.overSent = false;
-  addEffect(1, p.x, p.y, kind === PS.WIPEOUT ? 52 : 44);
-  emit(kind === PS.WIPEOUT ? EVENTS.WIPEOUT : EVENTS.RIDE_COMPLETE, { time: r.time, sweetTime: r.sweetTime });
+  addEffect(1, p.x, p.y, 52);
+  emit(EVENTS.WIPEOUT, {});
 }
 
-function stepRide(dt) {
+// Fun mode: shoved away, slowed down, and briefly invulnerable.
+function bump(h) {
   const p = game.player;
-  const r = game.ride;
-  const status = updateRide(r, p, getInputVector(), dt, game.field.shoreY);
-  if (r.slipped) { r.slipped = false; emit(EVENTS.SLIP, { zone: r.zone }); }
-  game.fx.slip += ((r.zone === ZONE.SWEET ? 0 : 1) - game.fx.slip) * Math.min(1, dt * 8);
-  game.dbg.catchSpeed = -(p.vx * r.wave.nx + p.vy * r.wave.ny);
-  game.dbg.dist = r.dist;
-  if (status === 'COMPLETE') endRide(PS.RIDE_COMPLETE);
-  else if (status === 'WIPEOUT') endRide(PS.WIPEOUT);
+  const C = RIDE_CONFIG;
+  game.run.speedMul = C.bumpSpeed;
+  game.run.omega = 0;
+  game.run.phi = Math.max(-C.maxAngle, Math.min(C.maxAngle, game.run.phi + (p.y >= h.y ? 1 : -1) * C.bumpNudge));
+  p.invuln = C.invulnTime;
+  addEffect(1, p.x, p.y, 40);
+  emit(EVENTS.HIT, {});
 }
 
-function respawn() {
+function awardNearMiss() {
+  const bonus = SCORE_CONFIG.nearMissPoints;
+  game.score.bonus += bonus;
+  game.score.nearMisses++;
+  addPopup(`+${bonus}`);
+  emit(EVENTS.NEAR_MISS, { bonus });
+}
+
+function handleHazardEvents() {
   const p = game.player;
-  findRespawn(p.x, game.waves.waves, game.field, game.bounds, spot);
-  p.x = spot.x;
-  p.y = spot.y;
-  p.vx = p.vy = p.speed = 0;
-  p.heading = -Math.PI / 2;
-  p.state = PS.PADDLING;
-  p.crouch = p.lean = p.wipeT = 0;
-  game.wake.length = 0;
-  addEffect(1, p.x, p.y, 30);
+  const edge = camera.x + game.field.w;
+  for (let i = 0; i < game.hz.list.length; i++) {
+    const h = game.hz.list[i];
+    if (h.kind === 'shark' && !h.warned && h.x - edge < HAZARD_CONFIG.shark.warnDist) { h.warned = true; emit(EVENTS.WARN, {}); }
+  }
+  if (p.state !== 'RIDING') return;
+  const hz = game.hz;
+  for (let i = 0; i < hz.touchList.length; i++) {
+    if (p.invuln > 0) continue;
+    if (game.mode === 'fun') bump(hz.touchList[i]);
+    else { wipeout(); return; }
+  }
+  for (let i = 0; i < hz.nearList.length; i++) awardNearMiss();
 }
 
-function stepEnding(dt) {
+function stepWipeout(dt) {
   const p = game.player;
   const C = RIDE_CONFIG;
   game.endT += dt;
-  const dur = p.state === PS.WIPEOUT ? C.wipeoutDuration : C.completeDuration;
-  p.wipeT = Math.min(1, game.endT / dur);
-  const k = Math.exp(-C.endDrag * dt);
+  p.wipeT = Math.min(1, game.endT / C.wipeoutDuration);
+  const k = Math.exp(-C.wipeDrag * dt);
+  game.run.speed *= k;
   p.vx *= k;
   p.vy *= k;
   p.x += p.vx * dt;
-  p.y += p.vy * dt;
-  clampPlayer(p, game.bounds);
+  p.y = Math.max(game.bounds.minY, Math.min(game.bounds.maxY, p.y + p.vy * dt));
   p.speed = Math.hypot(p.vx, p.vy);
-  game.fx.slip *= Math.max(0, 1 - dt * 8);
-
-  if (getSettings().mode === 'fun') {
-    if (game.endT >= dur + C.respawnDelay) respawn();
-  } else if (!game.overSent && game.endT >= dur + C.overDelay) {
+  p.carve *= Math.max(0, 1 - dt * 8);
+  if (!game.overSent && game.endT >= C.wipeoutDuration + C.overDelay) {
     game.overSent = true;
-    emit(EVENTS.RIDE_OVER, { result: p.state, time: game.stats.last, sweetTime: game.stats.lastSweet });
+    emit(EVENTS.RUN_OVER, { score: scoreValue(), distance: distanceMeters(), nearMisses: game.score.nearMisses, mode: game.mode });
   }
 }
 
 export function updateGame(dt) {
   refreshField();
-  game.waves.update(dt, game.field);
   const p = game.player;
-
-  if (p.state === PS.PADDLING) {
-    updatePlayer(p, getInputVector(), dt, game.bounds);
-    tryCatch(dt);
-  } else if (p.state === PS.RIDING) {
-    decayHints(game.waves.waves, dt);
-    stepRide(dt);
-  } else {
-    decayHints(game.waves.waves, dt);
-    stepEnding(dt);
-  }
-
-  const crouchTarget = p.state === PS.RIDING || p.state === PS.RIDE_COMPLETE ? 1 : 0;
-  p.crouch += (crouchTarget - p.crouch) * Math.min(1, dt * 10);
+  if (p.state === 'RIDING') updateRide(game.run, p, getInputVector(), dt, game.bounds);
+  else stepWipeout(dt);
+  updateCamera(p.x, game.field.w);
+  updateHazards(game.hz, dt, hazardView());
+  handleHazardEvents();
+  if (p.invuln > 0) p.invuln = Math.max(0, p.invuln - dt);
   updateWake(game.wake, p, dt);
-  updateEffects(dt);
-  updateCamera(p, game.field.w, dt);
+  updateFloating(game.effects, dt);
+  updateFloating(game.popups, dt);
 }

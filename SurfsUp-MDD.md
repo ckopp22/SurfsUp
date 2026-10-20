@@ -1,6 +1,6 @@
 # Surf's Up — Master Design Document (MDD)
 
-**Version:** 1.1 (scrolling-camera point break)
+**Version:** 2.0 (endless carving runner)
 **Build tool:** Claude Code in VS Code
 **Hosting:** GitHub Pages (commit + push to deploy)
 **Platforms:** Any modern browser, installable PWA on iPhone home screen (primary target), desktop with keyboard
@@ -9,7 +9,7 @@
 
 ## 1. Overview
 
-Surf's Up is a simple top-down surfing game. The player paddles a surfer around in the ocean, times a paddle into an incoming wave, then stays in the pocket by matching its speed as the wave peels left to right along the break while the camera follows. The ride ends when the surfer reaches the beach at the end of the break. The longer the player stays in the pocket, the higher the score.
+Surf's Up is a top-down endless-runner surfing game. The rider is already riding the face of a huge wave that never ends. The camera follows them along the wave while they carve up and down the face like a snowboarder, dodging rocks, sharks and other surfers. The run keeps getting faster and busier; the goal is to go as far as possible.
 
 **Design pillars**
 1. **Simple.** One screen, one control scheme, one goal.
@@ -36,9 +36,13 @@ Surf's Up is a simple top-down surfing game. The player paddles a surfer around 
 ├── css/style.css
 ├── js/
 │   ├── main.js          (boot, screen routing, game loop)
-│   ├── game.js          (state, update, scoring)
-│   ├── player.js        (surfer movement)
-│   ├── waves.js         (wave spawning and behavior)
+│   ├── game.js          (run state, update, scoring)
+│   ├── player.js        (rider entity, bounds, spray)
+│   ├── ride.js          (carve physics, run speed, difficulty)
+│   ├── waves.js         (wave wall geometry)
+│   ├── hazards.js       (rocks, sharks, other surfers)
+│   ├── world.js         (camera)
+│   ├── events.js        (hooks for audio/UI)
 │   ├── input.js         (keyboard + floating joystick)
 │   ├── render.js        (canvas drawing)
 │   ├── audio.js         (sfx + music + toggles)
@@ -134,85 +138,47 @@ All screens share a persistent top bar (safe-area inset):
 
 | | **Compete** | **Fun** |
 |---|---|---|
-| Goal | Highest score from your ride | Free paddle and surf |
-| Score shown | Yes, accumulates while in a wave | Yes, shown for fun, not saved |
-| End condition | Run ends when your ride ends (see 6.5) | Never ends; quit via pause menu |
+| Goal | Highest score (distance plus near-miss bonuses) | Ride as long as you like |
+| End condition | The first collision ends the run | Never ends; quit via pause menu |
+| Collisions | Wipeout, then Game Over | Bump: brief slowdown, no penalty |
 | High scores | Saved | Not saved |
-| Wave frequency | Steady set schedule, slightly increasing | Gentle, frequent, forgiving |
-| Wipeouts | Ends the run | Surfer pops up where they fell, no penalty |
-| After a ride | Game Over | Stay in the world; paddle back out toward the ocean (left/up) and catch the next wave |
-
-**Open decision (default chosen):** Compete is one heat of **90 seconds**. The run ends when the player's first ride ends, or at 90s if the player never rides a wave (score 0). This prevents stalling. Adjust if a "multiple rides in a heat" version is preferred (then score would add across rides and the heat timer would be the only end condition).
+| Difficulty ramp | Full | Gentle (slower ramp, fewer hazards) |
 
 ---
 
 ## 6. Gameplay
 
 ### 6.1 Perspective and World
-- Top-down 2D view, portrait orientation.
-- **The break:** the world is one long point break, `rideDistance` px wide (default ~3000, tune in config) and one screen tall. x = 0 is the ocean/take-off end; x = `rideDistance` is the beach end. The wave always peels **left to right**.
-- **Shore/beach is at the bottom** of the screen; open ocean is at the top. Waves spawn at the top and travel toward the bottom (toward the beach).
-- The player stays within the water area (clamped to the world and the visible play area vertically; cannot go onto the sand — sand strip at the bottom is a hard boundary, shown as a simple tan band). At the right end of the break the sand curves up and closes the water, so the surfer cannot go past it.
-- **Camera:** scrolls horizontally only, following the surfer's x (target about 35% from the left of the screen, with a little lookahead in the direction of travel, smoothed) and clamped to the world. No vertical scroll. Ripple lines, wave visuals and shoreline foam are drawn in world coordinates, so they scroll past as the camera moves; the sand strip and ocean bands stay fixed to the screen vertically.
+- Top-down 2D view, portrait orientation. The sand strip is at the bottom of the screen.
+- **The wave wall:** the crest runs along the bottom, just above the sand. The wave face rises from it toward the ocean and fills about 70-75% of the screen height (capped so the rider stays below the top bar). The face never ends and never changes shape.
+- **The camera** scrolls horizontally and is locked to the rider (the rider sits about 30% from the left). Ripples, foam and face streaks scroll past in world coordinates to give a sense of speed. There is no vertical scrolling.
 
-### 6.2 Player (Surfer on Board)
-- Drawn as a simple board shape (rounded rectangle/ellipse) with a small surfer figure (circle head, simple body) that rotates toward movement direction.
-- **Movement model:** velocity-based with acceleration and drag.
-  - Input vector (from keyboard or joystick) has magnitude 0 to 1.
-  - Holding input in one direction builds speed gradually toward a max (slow at first, faster the longer you keep going the same way). Suggested: acceleration ~ 220 px/s², max paddle speed ~ 140 px/s, drag when no input so the board glides to a stop.
-  - Changing direction sharply bleeds speed (turning is slower than going straight), reinforcing "go fast or slow based on how much you move in one direction."
-  - Joystick magnitude scales the target speed (small push = slow paddle, full push = max paddle).
-- Tuning constants live in one config object at the top of `player.js` for easy adjustment.
+### 6.2 Rider and Carving (snowboard feel)
+- The rider moves forward along the wave automatically. **Forward speed** starts at a moderate value and ramps up with time (see 6.5).
+- Steering is only up/down the face. The rider has a **board angle** (heading) relative to the wave direction. Steering turns the board with weight and momentum: the turn builds up gradually, holding it makes a long arc, and releasing lets the board straighten out.
+- Across-face speed comes from forward speed and board angle (the faster you go, the quicker a given angle crosses the face).
+- The board points along the path, banks into turns, and throws spray from its tail in proportion to how hard it is carving.
+- The rider is kept inside the face; at the edges the board straightens out.
 
 ### 6.3 Controls
-- **Keyboard (desktop):** W/A/S/D (arrow keys also supported). Diagonals supported and normalized.
-- **Touch (mobile):** **Floating joystick.** Touching anywhere in the lower ~70% of the screen (outside UI buttons) spawns a joystick base at the touch point; dragging moves the stick knob; lifting removes it. Max stick radius ~50px. Multi-touch is ignored beyond the first touch. Joystick must respect safe areas (do not spawn under home indicator zone; offset spawn upward if the touch is within the bottom inset).
-- No other buttons are required for gameplay. Catching and staying in a wave is done only through movement.
+- **Keyboard:** W/S and Up/Down arrows steer. Left/right are ignored.
+- **Touch:** the floating joystick (touch anywhere in the lower ~70% of the screen); only its vertical component steers, scaled by how far it is pushed. Safe-area and multi-touch rules as before.
 
-### 6.4 Waves
+### 6.4 Hazards
+- **Rocks:** stationary; spawn ahead of the rider and scroll toward them. Sizes vary; clusters form gates and gaps.
+- **Sharks:** move across the face diagonally as they approach, so they must be led, not just avoided.
+- **Other surfers:** ride the same direction at a slower, varying speed and weave gently; the rider overtakes them.
+- Hazards spawn off-screen to the right. The spawner always leaves a passable path (a gap wide enough for the rider at the current speed).
 
-**Wave anatomy.** A wave is a long crest line that runs along the whole break (the world width) at a slight angle and travels slowly toward the beach. It has a **peel point**: the section of the crest that is currently breaking (the "pocket"), which moves laterally along the crest at a set peel speed (always left to right). The ride happens in the pocket.
+### 6.5 Difficulty
+- Forward speed ramps with time up to a cap; spawn density ramps; harder hazards (sharks, clusters) unlock over time. Fun mode uses a gentler curve.
 
-**Lifecycle**
-1. **Swell (warning):** A faint swell line appears at the top of the screen and moves down. Slight visual rise (lighter band, small foam hint) signals that a wave is coming. Gives the player a few seconds to position.
-2. **Building:** The crest becomes more defined (white foam line on top, darker face behind it). The pocket starts forming at one end and moves along the crest in the peel direction.
-3. **Breaking / rideable:** Wave travels down toward shore at **wave speed** while the pocket moves laterally at **peel speed**. The pocket's position and the combined wave motion define the target the player must match.
-4. **Closing out:** Near the beach the wave collapses into foam and fades; any rider still in it finishes the ride (ride ends, see 6.5).
+### 6.6 Scoring
+- Score is distance (meters) plus a flat **+10 for every near miss** (passing close to a hazard without touching it). Shown at the top center during play.
 
-**Suggested starting values** (tune in `waves.js` config):
-- Wave speed toward shore: 60 px/s
-- Peel speed along the crest: 90 px/s (varies per wave: 70–120)
-- Wave spawn interval: Compete 6–9s; Fun 4–6s
-- Crest length: the full break (`rideDistance`), angle of 15–30° from horizontal (the end nearer the beach is the right end)
-- Rideable lifetime: `rideDistance / peel speed` (e.g. 3000 / 100 = about 30s)
-
-### 6.5 Catching a Wave
-- **Catch window:** When the crest line passes through the surfer's position, the surfer is "in position" for a brief window (~0.6s) if they are within the pocket zone near the peel point.
-- **To catch it, the player must be paddling toward shore (downward) at or above a minimum catch speed (~70% of max paddle speed) when the crest reaches them.** Too slow, and the wave passes under the surfer (they bob up and over, no catch). Too early or outside the pocket zone, same result.
-- Visual/audio feedback: small splash and a "whoosh" when successfully caught; board tilts and surfer crouches (simple pose change).
-
-### 6.6 Riding a Wave
-- Once caught, the surfer is **in the wave** and is carried toward shore at wave speed automatically.
-- The player controls lateral movement (and a little vertical position on the face) with the same WASD/joystick controls.
-- The pocket moves laterally at the peel speed. The player must **match that lateral speed** to stay in the pocket:
-  - Define a **sweet-spot zone** around the pocket center (e.g. radius ~50px).
-  - Inside the sweet spot: scoring runs at full rate.
-  - In the **outer zone** (~50–90px): the surfer is slipping. Scoring continues at a reduced rate and a warning flash/sound plays.
-  - Beyond the outer zone, **or** too far ahead of the pocket (onto the unbroken shoulder): **wipeout.**
-- Falling behind lets the wave close out over the player (foam). Going too far ahead puts the player on the flat shoulder where the wave stops carrying them.
-- The wave carries the player toward the beach. The ride ends naturally when the surfer reaches the end of the break (distance-based: the beach at x = `rideDistance`), or if the wave reaches the beach/foam line first (a "ride complete" is not a wipeout and keeps the score).
-
-### 6.7 Wipeouts and Ride End
-- **Wipeout:** simple tumble animation (board flips, splash), brief 1s pause.
-- **Compete:** a wipeout or a completed ride ends the run → Game Over with the score accumulated.
-- **Fun:** after a wipeout or completed ride, the surfer pops up on the board where they are (no penalty) and the score resets to 0 for the next ride (best ride shown in the HUD). The world keeps running: the surfer can paddle back out toward the ocean end (camera follows in both directions) and catch the next wave, which spawns on the Fun schedule. Number of simultaneous waves and spawn timing to be tuned in Step 4b.
-
-### 6.8 Scoring
-- Score accumulates only while in a wave.
-- Base rate: **10 points per second** in the sweet spot, **4 points per second** in the outer zone.
-- **Streak multiplier:** continuous time in the sweet spot raises a multiplier: ×1 → ×2 (after 3s) → ×3 (after 6s) → ×4 (after 10s). Dropping into the outer zone drops the multiplier by one step. Wipeout or ride end stops scoring.
-- Score displayed as whole numbers in the HUD, with a small multiplier indicator beside it.
-- Optional: speed-match bonus later (not in v1).
+### 6.7 Collisions
+- **Compete:** a collision is a wipeout (tumble animation, ~1 s), then Game Over with the final score and "New High Score!" if it qualifies.
+- **Fun:** a collision bumps the rider, slows them briefly, and the run continues.
 
 ---
 
@@ -258,7 +224,7 @@ BOOT → MENU ⇄ SETTINGS
                 → (Compete) GAME_OVER → PLAYING | MENU
                 → (Fun) quit → MENU
 ```
-Within PLAYING, the surfer sub-state: `PADDLING → RIDING → WIPEOUT/RIDE_COMPLETE → (Fun: PADDLING | Compete: GAME_OVER)`.
+Within PLAYING, the rider sub-state: `RIDING → WIPEOUT → (Fun: RIDING | Compete: GAME_OVER)`.
 
 ---
 
@@ -279,15 +245,14 @@ Within PLAYING, the surfer sub-state: `PADDLING → RIDING → WIPEOUT/RIDE_COMP
 
 Build in small steps, running locally between steps (e.g. `npx serve` or VS Code Live Server) and testing on an iPhone via the deployed Pages URL.
 
-1. **Scaffold:** `index.html`, CSS (iOS rules from section 3), manifest, empty service worker, icons placeholder, canvas fills the screen with safe-area-aware layout.
-2. **Menu & navigation:** Main menu, High Scores, Settings screens, top-left sound toggle, top-right Compete/Fun toggle, state persistence.
-3. **Player & controls:** Surfer movement with WASD and floating joystick, acceleration/drag model, water bounds.
-4. **Waves:** Spawning, swell → building → breaking → close-out, pocket peel motion, visuals.
-4b. **Scrolling break:** World coordinates, horizontal-follow camera, full-length left-to-right wave, sand wedge at the beach end, world-space ripples/foam, joystick and bounds working with the camera.
-5. **Catch & ride:** Catch window logic, riding state, sweet-spot/outer-zone logic, wipeout/ride-complete.
-6. **Scoring & modes:** Score accumulation, multiplier, Compete heat/game over, Fun respawn behavior, high score saving.
+1. **Scaffold:** `index.html`, CSS (iOS rules from section 3), manifest, service worker, icons, canvas fills the screen.
+2. **Menu & navigation:** Main menu, High Scores, Settings, toggles, state persistence.
+3. **Input & rider basics:** keyboard + floating joystick, spray/wake, camera.
+4. **Runner core (done):** start already riding the endless wave, auto-scrolling camera, snowboard carve physics, time-based speed ramp, distance HUD, pause/quit.
+5. **Hazards:** rocks, sharks, other surfers, spawner with guaranteed gaps, difficulty ramp.
+6. **Collisions & scoring:** wipeout, near-miss bonuses, Compete Game Over and high scores, Fun-mode bumps.
 7. **Audio:** Web Audio SFX, music loop, toggle behavior, iOS unlock.
-8. **PWA & polish:** Service worker caching, install hint, icon set, pause on visibility change, performance pass.
+8. **PWA & polish:** install hint, icon set, pause on visibility change, performance pass.
 9. **Deploy:** Commit, push, enable GitHub Pages, test the live URL and Add to Home Screen on iPhone.
 
 ---
@@ -303,12 +268,11 @@ Build in small steps, running locally between steps (e.g. `npx serve` or VS Code
 - [ ] Works offline after first load
 
 **Gameplay**
-- [ ] WASD and arrow keys move the surfer; speed builds when moving in one direction
-- [ ] Floating joystick appears under the thumb and scales speed with distance
-- [ ] Camera follows the surfer along the break; the ride ends at the beach at the end of the break
-- [ ] A wave can be caught only when paddling fast enough toward shore at the right moment
-- [ ] Staying in the pocket by matching peel speed scores points; slipping reduces scoring; falling out wipes out
-- [ ] Compete ends the run and offers a saved high score; Fun lets the player surf freely with no game over
+- [ ] The run starts already riding; the camera follows and the wave scrolls endlessly
+- [ ] W/S, arrow keys and the joystick's vertical axis steer; carving has momentum and the board banks and sprays
+- [ ] Speed and hazard density ramp up over time
+- [ ] Rocks, sharks and other surfers appear; there is always a passable gap
+- [ ] Compete: a collision ends the run and offers a saved high score; Fun: collisions only bump
 
 **UI**
 - [ ] Sound toggle top left on every screen; Compete/Fun toggle top right on menu screens (locked during play)

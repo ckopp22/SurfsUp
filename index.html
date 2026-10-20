@@ -30,6 +30,7 @@
     </div>
   </div>
 
+  <div id="hud" class="hud" hidden>0 m</div>
   <pre id="debug" hidden></pre>
 
   <main id="screens">
@@ -39,6 +40,10 @@
         <button class="btn btn-primary" type="button" data-go="PLAYING">Play</button>
         <button class="btn" type="button" data-go="HIGH_SCORES">High Scores</button>
         <button class="btn" type="button" data-go="SETTINGS">Settings</button>
+      </div>
+      <div id="a2hs" class="hint" hidden>
+        <span>To install: tap Share, then Add to Home Screen</span>
+        <button class="hint-x" type="button" data-action="dismiss-hint" aria-label="Dismiss">&#10005;</button>
       </div>
     </section>
 
@@ -69,14 +74,15 @@
       <button id="pause-btn" class="icon-btn" type="button" aria-label="Pause">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
       </button>
-      <p id="tip" class="tip" hidden>Paddle toward the bottom right through the yellow box as the pocket reaches you</p>
       <div id="ride-over" class="overlay" hidden>
         <div class="panel">
-          <h2 class="heading">Ride over</h2>
-          <p id="ride-over-result"></p>
+          <h2 class="heading" id="ride-over-result">Wipeout!</h2>
+          <p id="ride-over-score" class="big-score">0</p>
           <p id="ride-over-time"></p>
+          <p id="new-high" class="badge" hidden>New High Score!</p>
           <div class="stack">
-            <button class="btn btn-primary" type="button" data-go="MENU">Back to Menu</button>
+            <button class="btn btn-primary" type="button" data-go="PLAYING">Play Again</button>
+            <button class="btn" type="button" data-go="MENU">Menu</button>
           </div>
         </div>
       </div>

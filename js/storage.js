@@ -35,6 +35,11 @@ export function getHighScores() {
   return Array.isArray(list) ? list : [];
 }
 
+export function qualifiesForHighScore(score) {
+  const list = getHighScores();
+  return score > 0 && (list.length < MAX_SCORES || score > list[list.length - 1].score);
+}
+
 export function addHighScore(score) {
   const list = getHighScores();
   list.push({ score, date: new Date().toISOString().slice(0, 10) });

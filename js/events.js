@@ -1,11 +1,11 @@
 // Tiny pub/sub so audio (Step 7) and UI can react to gameplay without game.js knowing about them.
 export const EVENTS = {
-  CATCH: 'catch',
-  MISS: 'miss',              // wave passed under the surfer
-  SLIP: 'slip',              // surfer drifted out of the sweet spot
-  WIPEOUT: 'wipeout',
-  RIDE_COMPLETE: 'rideComplete',
-  RIDE_OVER: 'rideOver',     // end-of-ride animation finished (Compete: show Game Over)
+  CARVE: 'carve',          // a hard carve is under way: { strength 0..1 } (spray/whoosh)
+  NEAR_MISS: 'nearMiss',   // passed close to a hazard: { bonus } (flat +10)
+  WARN: 'warn',            // a shark is about to swim into view
+  HIT: 'hit',              // Fun mode bump
+  WIPEOUT: 'wipeout',      // Compete collision
+  RUN_OVER: 'runOver',     // wipeout animation finished: { score, distance } (Compete: show Game Over)
 };
 
 const handlers = {};

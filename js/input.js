@@ -93,7 +93,7 @@ export function setInputEnabled(on) {
   if (!on) clearInput();
 }
 
-export function initInput(canvas, { onDebugToggle, onSpawnWave, onToggleForgiving }) {
+export function initInput(canvas, { onDebugToggle, onSpawnWave = () => {}, onToggleForgiving = () => {} }) {
   const J = INPUT.joystick;
   const D = INPUT.debugTap;
   let taps = [];
