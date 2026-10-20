@@ -159,7 +159,7 @@ function frame(now) {
   const running = state !== 'PAUSED' && !document.hidden;
   if (running) oceanTime += dt;
   if (running && state === 'PLAYING') updateGame(dt);
-  updateAudio(state === 'PLAYING' && game.player.state === 'RIDING', game.player.carve, game.run.speed / RIDE_CONFIG.maxSpeed);
+  updateAudio(state === 'PLAYING' && game.player.state === 'RIDING', getInputVector().y, game.run.speed / RIDE_CONFIG.maxSpeed);
 
   if (state === 'PLAYING' || state === 'PAUSED' || state === 'GAME_OVER') {
     drawWater(ctx, oceanTime);
@@ -172,7 +172,7 @@ function frame(now) {
     drawEffects(ctx, game.effects);
     drawPopups(ctx, game.popups, game.player);
     endWorld(ctx);
-    drawWarnings(ctx, game.hz.list, HAZARD_CONFIG.shark.warnDist, game.bounds.minY, game.bounds.maxY, oceanTime);
+    drawWarnings(ctx, game.hz.list, Math.max(HAZARD_CONFIG.shark.warnMin, game.run.speed * HAZARD_CONFIG.shark.warnTime), game.bounds.minY, game.bounds.maxY, oceanTime);
     const joy = getJoystick();
     if (joy) drawJoystick(ctx, joy);
     const text = String(scoreValue());

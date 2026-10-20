@@ -2,7 +2,6 @@
 export const EVENTS = {
   CARVE: 'carve',          // a hard carve is under way: { strength 0..1 } (spray/whoosh)
   NEAR_MISS: 'nearMiss',   // passed close to a hazard: { bonus } (flat +10)
-  WARN: 'warn',            // a shark is about to swim into view
   HIT: 'hit',              // Fun mode bump
   WIPEOUT: 'wipeout',      // Compete collision
   RUN_OVER: 'runOver',     // wipeout animation finished: { score, distance } (Compete: show Game Over)

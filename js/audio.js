@@ -5,7 +5,12 @@ import { on, EVENTS } from './events.js';
 export const AUDIO_CONFIG = {
   sfx: 0.7,        // sound effects volume
   music: 0.22,     // music volume
-  carve: 0.5,      // carving whoosh volume at full carve
+  water: 0.04,     // constant quiet water sound while riding (0.04 + a little more with speed)
+  waterSpeed: 0.03, // extra water volume at top speed
+  swoosh: 0.8,     // carve swoosh sample volume at a full hard carve
+  swooshAt: 0.5,   // how far up/down the key or joystick must be pushed (0..1) to play a swoosh
+  swooshRelease: 0.2, // push below this lets the next press play again
+  swooshGap: 0.2,  // s minimum between swooshes
   bpm: 96,         // music tempo
   arpChance: 0.8,  // chance each eighth note plays an arpeggio note
 };
@@ -13,8 +18,11 @@ export const AUDIO_CONFIG = {
 let ctx = null;
 let sfxGain = null;
 let musicGain = null;
-let carveGain = null;
-let carveFilter = null;
+let waterGain = null;
+let waterFilter = null;
+const swoosh = { up: null, down: null }; // decoded samples: swoosh 1 = carving up, swoosh 2 = carving down
+let lastDir = 0;
+let lastSwoosh = -1;
 let noiseBuf = null;
 let hidden = false;
 let pausedByGame = false;
@@ -48,23 +56,45 @@ export function unlockAudio() {
       const d = noiseBuf.getChannelData(0);
       for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
 
-      // continuous carving whoosh, silent until the rider carves
+      // constant quiet water sound while riding
       const src = ctx.createBufferSource();
       src.buffer = noiseBuf;
       src.loop = true;
-      carveFilter = ctx.createBiquadFilter();
-      carveFilter.type = 'bandpass';
-      carveFilter.frequency.value = 600;
-      carveFilter.Q.value = 0.8;
-      carveGain = ctx.createGain();
-      carveGain.gain.value = 0;
-      src.connect(carveFilter).connect(carveGain).connect(sfxGain);
+      waterFilter = ctx.createBiquadFilter();
+      waterFilter.type = 'lowpass';
+      waterFilter.frequency.value = 700;
+      waterGain = ctx.createGain();
+      waterGain.gain.value = 0;
+      src.connect(waterFilter).connect(waterGain).connect(sfxGain);
       src.start();
+      loadSwooshes();
       startMusic();
     }
     if (ctx.state === 'suspended' && !hidden && !pausedByGame) ctx.resume();
     refreshAudio();
   } catch (e) { /* audio blocked: stay silent */ }
+}
+
+function loadSample(url) {
+  return fetch(url)
+    .then((r) => r.arrayBuffer())
+    .then((buf) => new Promise((resolve, reject) => ctx.decodeAudioData(buf, resolve, reject)));
+}
+
+function loadSwooshes() {
+  loadSample('./audio/swoosh-up.mp3').then((b) => { swoosh.up = b; }).catch(() => {});
+  loadSample('./audio/swoosh-down.mp3').then((b) => { swoosh.down = b; }).catch(() => {});
+}
+
+function playSwoosh(buffer, strength, speedFrac) {
+  if (!ctx || !buffer) return;
+  const src = ctx.createBufferSource();
+  src.buffer = buffer;
+  src.playbackRate.value = 0.9 + 0.3 * speedFrac; // faster rides sound a bit higher and snappier
+  const g = ctx.createGain();
+  g.gain.value = AUDIO_CONFIG.swoosh * (0.5 + 0.5 * strength);
+  src.connect(g).connect(sfxGain);
+  src.start();
 }
 
 // Apply the SFX/music settings to the gains.
@@ -123,7 +153,6 @@ function noiseBurst(dur, f0, f1, vol, type) {
 // ---- sound effects ----
 export function sfxTap() { tone(520, 0.06, 'triangle', 0.25, 700); }
 function sfxNearMiss() { tone(880, 0.09, 'triangle', 0.35); tone(1320, 0.14, 'triangle', 0.35, undefined, ctx ? ctx.currentTime + 0.07 : 0); }
-function sfxWarn() { tone(660, 0.07, 'square', 0.12); tone(660, 0.07, 'square', 0.12, undefined, ctx ? ctx.currentTime + 0.12 : 0); }
 function sfxBump() { tone(170, 0.2, 'sine', 0.7, 60); noiseBurst(0.25, 1200, 200, 0.35); }
 function sfxWipeout() { noiseBurst(0.9, 2400, 180, 0.75); tone(130, 0.5, 'sine', 0.8, 45); }
 export function sfxGameOver(newHigh) {
@@ -134,16 +163,25 @@ export function sfxGameOver(newHigh) {
 }
 
 on(EVENTS.NEAR_MISS, sfxNearMiss);
-on(EVENTS.WARN, sfxWarn);
 on(EVENTS.HIT, sfxBump);
 on(EVENTS.WIPEOUT, sfxWipeout);
 
-// Called every frame: the carving whoosh follows how hard the rider is carving and how fast they go.
-export function updateAudio(playing, carve, speedFrac) {
-  if (!ctx || !carveGain) return;
+// Called every frame. steer = the up/down input (-1 up .. +1 down). Swooshes play on the press only, not when the board straightens out.
+export function updateAudio(playing, steer, speedFrac) {
+  if (!ctx || !waterGain) return;
   const t = ctx.currentTime;
-  carveGain.gain.setTargetAtTime(playing ? carve * AUDIO_CONFIG.carve : 0, t, 0.05);
-  carveFilter.frequency.setTargetAtTime(400 + 1600 * speedFrac, t, 0.1);
+  waterGain.gain.setTargetAtTime(playing ? AUDIO_CONFIG.water + AUDIO_CONFIG.waterSpeed * speedFrac : 0, t, 0.1);
+  waterFilter.frequency.setTargetAtTime(500 + 500 * speedFrac, t, 0.2);
+
+  // a swoosh when up/down is pressed: swoosh 1 for up, swoosh 2 for down
+  const mag = Math.abs(steer);
+  if (!playing || mag < AUDIO_CONFIG.swooshRelease) { lastDir = 0; return; }
+  const dir = steer > 0 ? 1 : -1;
+  if (mag >= AUDIO_CONFIG.swooshAt && dir !== lastDir && t - lastSwoosh > AUDIO_CONFIG.swooshGap) {
+    playSwoosh(dir > 0 ? swoosh.down : swoosh.up, Math.min(1, mag), speedFrac);
+    lastSwoosh = t;
+    lastDir = dir;
+  }
 }
 
 // ---- music: a mellow generated loop (pad, bass and a gentle arpeggio) ----

@@ -133,11 +133,6 @@ function awardNearMiss() {
 
 function handleHazardEvents() {
   const p = game.player;
-  const edge = camera.x + game.field.w;
-  for (let i = 0; i < game.hz.list.length; i++) {
-    const h = game.hz.list[i];
-    if (h.kind === 'shark' && !h.warned && h.x - edge < HAZARD_CONFIG.shark.warnDist) { h.warned = true; emit(EVENTS.WARN, {}); }
-  }
   if (p.state !== 'RIDING') return;
   const hz = game.hz;
   for (let i = 0; i < hz.touchList.length; i++) {

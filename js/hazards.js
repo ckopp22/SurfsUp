@@ -25,7 +25,7 @@ export const HAZARD_CONFIG = {
   mix: { rock: 0.6, shark: [0.18, 0.3], surfer: 0.2 },
   sharkUnlock: 18,        // s
   surferUnlock: 8,        // s
-  shark: { speed: [80, 140], drift: -25, radius: 18, length: 64, warnDist: 380 }, // across-face px/s, px/s toward the rider
+  shark: { speed: [80, 140], drift: -25, radius: 18, length: 64, warnMin: 500, warnTime: 3.2 }, // across-face px/s, px/s toward the rider; heads-up marker shows warnTime seconds ahead (at least warnMin px)
   surfer: { speedFrac: [0.25, 0.45], weaveAmp: [30, 70], weaveHz: [0.5, 1.0], radius: 15 }, // fraction of rider speed
   slotScale: { rock: 1, shark: 1.15, surfer: 1.3 }, // extra spacing after each kind of event
 };
