@@ -30,6 +30,8 @@
     </div>
   </div>
 
+  <pre id="debug" hidden></pre>
+
   <main id="screens">
     <section id="screen-menu" class="screen" hidden>
       <h1 class="title">Surf's Up</h1>
@@ -67,7 +69,17 @@
       <button id="pause-btn" class="icon-btn" type="button" aria-label="Pause">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
       </button>
-      <p class="placeholder-note">Game coming soon</p>
+      <p id="tip" class="tip" hidden>Paddle toward the bottom right through the yellow box as the pocket reaches you</p>
+      <div id="ride-over" class="overlay" hidden>
+        <div class="panel">
+          <h2 class="heading">Ride over</h2>
+          <p id="ride-over-result"></p>
+          <p id="ride-over-time"></p>
+          <div class="stack">
+            <button class="btn btn-primary" type="button" data-go="MENU">Back to Menu</button>
+          </div>
+        </div>
+      </div>
       <div id="pause-overlay" class="overlay" hidden>
         <div class="panel">
           <h2 class="heading">Paused</h2>

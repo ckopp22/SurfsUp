@@ -148,7 +148,14 @@ button {
   position: absolute; top: calc(var(--sat) + var(--topbar-h) + 16px); right: calc(var(--sar) + 12px);
   pointer-events: auto;
 }
-.placeholder-note { margin: 0; font-size: 18px; opacity: 0.7; pointer-events: none; }
+#debug {
+  position: fixed; z-index: 12; margin: 0;
+  top: calc(var(--sat) + var(--topbar-h) + 16px); left: calc(var(--sal) + 12px);
+  padding: 6px 8px; border-radius: 8px;
+  background: rgba(0, 0, 0, 0.5); color: #fff;
+  font: 12px/1.35 ui-monospace, Menlo, monospace;
+  pointer-events: none;
+}
 
 .overlay {
   position: absolute; inset: 0; z-index: 20;
@@ -160,3 +167,10 @@ button {
 #confirm { position: fixed; z-index: 30; }
 .overlay .panel { display: flex; flex-direction: column; align-items: center; gap: 18px; text-align: center; }
 .overlay .panel p { margin: 0; font-size: 18px; }
+
+.tip {
+  position: absolute; margin: 0; left: 50%; transform: translateX(-50%);
+  top: calc(var(--sat) + var(--topbar-h) + 64px); width: max-content; max-width: 72%;
+  padding: 8px 14px; border-radius: 16px; font-size: 14px; font-weight: 600; text-align: center;
+  background: rgba(10, 90, 128, 0.8); pointer-events: none;
+}
